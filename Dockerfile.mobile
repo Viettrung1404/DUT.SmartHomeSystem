@@ -1,0 +1,25 @@
+# Build stage for Expo development
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install Expo CLI globally
+RUN npm install -g expo-cli
+
+# Copy package files
+COPY mobile/package.json mobile/package-lock.json* ./
+
+# Install dependencies
+RUN npm install
+
+# Copy the project files
+COPY mobile/ .
+
+# Expose Expo dev server port
+EXPOSE 8081
+EXPOSE 19000
+EXPOSE 19001
+EXPOSE 19002
+
+# Start Expo dev server
+CMD ["npx", "expo", "start", "--tunnel"]
