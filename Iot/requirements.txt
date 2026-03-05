@@ -1,0 +1,4 @@
+paho-mqtt>=1.6.1,<2.0
+Adafruit-DHT==1.4.0
+opencv-python-headless
+requests

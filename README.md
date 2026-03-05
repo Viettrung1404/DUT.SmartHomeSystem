@@ -101,3 +101,5 @@ Thay đổi port mapping trong `docker-compose.yml` nếu port bị conflict.
 ### Mobile app không kết nối được backend
 
 Kiểm tra network settings và đảm bảo backend đã chạy thành công.
+pkill -f device_client.py
+pkill -f face_client.py
