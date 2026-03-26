@@ -5,6 +5,7 @@ alembic
 psycopg2-binary
 slowapi
 python-dotenv
+tzdata
 pyjwt
 passlib
 bcrypt==4.0.1
@@ -13,3 +14,7 @@ email-validator
 paho-mqtt
 websockets
 apscheduler
+numpy
+scikit-learn
+pandas
+httpx

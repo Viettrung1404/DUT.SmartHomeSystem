@@ -4,6 +4,7 @@ import { View, StyleSheet } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Feather } from '@expo/vector-icons';
 import { BorderRadius } from '@/constants/theme';
+import { IconSymbol } from '@/components/ui/icon-symbol';
 
 export default function TabLayout() {
   const { colors } = useTheme();
@@ -37,7 +38,14 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="rooms"
+        name="suggestions"
+        options={{
+          title: 'Suggestions',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="lightbulb.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
         options={{
           title: 'Phòng',
           tabBarIcon: ({ color, size }) => <Feather name="grid" size={22} color={color} />,
