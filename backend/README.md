@@ -21,6 +21,9 @@ I'm open to hearing your feedback about the template and what you'd like to see 
 # Install all dependencies.
 - Run `pip install -r requirements-dev.txt`
 
+# Optional InsightFace dependencies.
+- Run `pip install -r requirements-face.txt`
+
 # How to run app. Using Docker with PostgreSQL.
 - Install Docker Desktop
 - Run `docker compose up --build`

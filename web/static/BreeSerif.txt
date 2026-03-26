@@ -1,0 +1,2 @@
+This UI uses the "Bree Serif" font name as a fallback; no font file is bundled.
+If you want a specific font, add it here and reference it in app.css.

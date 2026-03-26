@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Smart Home MQTT Control</title>
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body data-backend-url="{{ backend_base_url }}">
+    <main class="page">
+      <header class="header">
+        <h1>Smart Home Control</h1>
+        <p>Send MQTT commands to your device and see the last status.</p>
+      </header>
+
+      <section class="card">
+        <h2>Light</h2>
+        <div class="buttons">
+          <button data-command="light on">On</button>
+          <button data-command="light off">Off</button>
+          <button data-command="light toggle">Toggle</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Fan</h2>
+        <div class="buttons">
+          <button data-command="fan on">On</button>
+          <button data-command="fan off">Off</button>
+          <button data-command="fan toggle">Toggle</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>All</h2>
+        <div class="buttons">
+          <button data-command="all on">All On</button>
+          <button data-command="all off">All Off</button>
+          <button data-command="status">Refresh Status</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Environment</h2>
+        <div class="env">
+          <div class="env-row">
+            <span class="label">Temperature</span>
+            <span id="temp">--</span>
+          </div>
+          <div class="env-row">
+            <span class="label">Humidity</span>
+            <span id="humidity">--</span>
+          </div>
+          <div class="env-row">
+            <span class="label">Distance</span>
+            <span id="distance">--</span>
+          </div>
+          <div class="env-row">
+            <span class="label">Proximity Alert</span>
+            <span id="distance-alert" class="badge">--</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Last Status</h2>
+        <pre id="status">Loading...</pre>
+      </section>
+
+      <section class="card">
+        <h2>Last Face</h2>
+        <p id="face-placeholder" class="muted">No image yet</p>
+        <img id="face-image" class="face-image" alt="Last face capture" />
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,57 @@
+import React from 'react';
+import { View, Text } from 'react-native';
+import { useTheme } from '@/contexts/ThemeContext';
+import { Card } from './ui/Card';
+import { Badge } from './ui/Badge';
+import { Spacing } from '@/constants/theme';
+import { Typography } from '@/constants/typography';
+import { Feather } from '@expo/vector-icons';
+import { Room } from '@/services/mockData';
+
+interface RoomCardProps {
+    room: Room;
+    onPress: (room: Room) => void;
+}
+
+export function RoomCard({ room, onPress }: RoomCardProps) {
+    const { colors } = useTheme();
+    const iconName = (room.icon || 'home') as keyof typeof Feather.glyphMap;
+
+    return (
+        <Card onPress={() => onPress(room)} style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <View
+                    style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 12,
+                        backgroundColor: colors.primaryLight,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                    }}
+                >
+                    <Feather name={iconName} size={20} color={colors.primary} />
+                </View>
+                <Badge variant={room.isOnline ? 'online' : 'offline'} />
+            </View>
+
+            <Text style={[Typography.bodyMedium, { color: colors.text, marginTop: Spacing.md }]} numberOfLines={1}>
+                {room.name}
+            </Text>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.xs }}>
+                <Feather name="cpu" size={12} color={colors.textTertiary} />
+                <Text style={[Typography.caption, { color: colors.textSecondary }]}>
+                    {room.activeDevices}/{room.deviceCount} thiết bị
+                </Text>
+            </View>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginTop: Spacing.xs }}>
+                <Feather name="zap" size={12} color={colors.warning} />
+                <Text style={[Typography.caption, { color: colors.textSecondary }]}>
+                    {room.energyToday} kWh
+                </Text>
+            </View>
+        </Card>
+    );
+}
