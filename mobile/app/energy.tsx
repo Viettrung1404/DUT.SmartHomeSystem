@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -8,21 +8,49 @@ import { EnergyChart } from '@/components/EnergyChart';
 import { Spacing } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
 import { Feather } from '@expo/vector-icons';
-import { mockHome, mockEnergyDaily, mockEnergyWeekly, mockEnergyMonthly } from '@/services/mockData';
+import { energyAPI, homesAPI, EnergySummaryResponse } from '@/services/api';
+
+const EMPTY_ENERGY: EnergySummaryResponse = {
+    total: 0,
+    data: [],
+    breakdown: [],
+    comparison: 0,
+};
 
 export default function EnergyScreen() {
     const { colors } = useTheme();
+    const [daily, setDaily] = useState<EnergySummaryResponse>(EMPTY_ENERGY);
+    const [weekly, setWeekly] = useState<EnergySummaryResponse>(EMPTY_ENERGY);
+    const [monthly, setMonthly] = useState<EnergySummaryResponse>(EMPTY_ENERGY);
 
-    const energyChange = ((mockHome.energyToday - mockHome.energyYesterday) / mockHome.energyYesterday * 100).toFixed(1);
-    const isEnergyUp = mockHome.energyToday > mockHome.energyYesterday;
+    useEffect(() => {
+        loadEnergy();
+    }, []);
 
-    // Breakdown mock
-    const breakdown = [
-        { name: 'Máy lạnh', usage: 4.2, pct: 34, icon: 'wind' },
-        { name: 'Đèn', usage: 3.1, pct: 25, icon: 'sun' },
-        { name: 'Bếp', usage: 2.8, pct: 23, icon: 'coffee' },
-        { name: 'Khác', usage: 2.3, pct: 18, icon: 'more-horizontal' },
-    ];
+    const loadEnergy = async () => {
+        try {
+            const homes = await homesAPI.list();
+            if (!homes.length) return;
+
+            const homeId = homes[0].id;
+            const [dailyRes, weeklyRes, monthlyRes] = await Promise.all([
+                energyAPI.daily(homeId),
+                energyAPI.weekly(homeId),
+                energyAPI.monthly(homeId),
+            ]);
+
+            setDaily(dailyRes);
+            setWeekly(weeklyRes);
+            setMonthly(monthlyRes);
+        } catch (error) {
+            console.error('Failed to load energy data:', error);
+        }
+    };
+
+    const todayTotal = daily.total || 0;
+    const comparisonPct = daily.comparison || 0;
+    const yesterdayTotal = comparisonPct !== -100 ? todayTotal / (1 + comparisonPct / 100) : 0;
+    const isEnergyUp = comparisonPct > 0;
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
@@ -33,14 +61,14 @@ export default function EnergyScreen() {
                     <Card style={{ flex: 1 }}>
                         <Text style={[Typography.caption, { color: colors.textSecondary }]}>Hôm nay</Text>
                         <Text style={[Typography.numberLarge, { color: colors.text, marginTop: Spacing.xs }]}>
-                            {mockHome.energyToday}
+                            {todayTotal.toFixed(1)}
                         </Text>
                         <Text style={[Typography.caption, { color: colors.textSecondary }]}>kWh</Text>
                     </Card>
                     <Card style={{ flex: 1 }}>
                         <Text style={[Typography.caption, { color: colors.textSecondary }]}>Hôm qua</Text>
                         <Text style={[Typography.numberLarge, { color: colors.text, marginTop: Spacing.xs }]}>
-                            {mockHome.energyYesterday}
+                            {yesterdayTotal.toFixed(1)}
                         </Text>
                         <Text style={[Typography.caption, { color: colors.textSecondary }]}>kWh</Text>
                     </Card>
@@ -52,7 +80,7 @@ export default function EnergyScreen() {
                                 { color: isEnergyUp ? colors.error : colors.success, marginTop: Spacing.xs },
                             ]}
                         >
-                            {isEnergyUp ? '+' : ''}{energyChange}%
+                            {isEnergyUp ? '+' : ''}{comparisonPct.toFixed(1)}%
                         </Text>
                         <Feather
                             name={isEnergyUp ? 'trending-up' : 'trending-down'}
@@ -64,7 +92,7 @@ export default function EnergyScreen() {
 
                 {/* Chart */}
                 <View style={{ marginBottom: Spacing.md }}>
-                    <EnergyChart dailyData={mockEnergyDaily} weeklyData={mockEnergyWeekly} monthlyData={mockEnergyMonthly} />
+                    <EnergyChart dailyData={daily.data} weeklyData={weekly.data} monthlyData={monthly.data} />
                 </View>
 
                 {/* Breakdown */}
@@ -72,8 +100,16 @@ export default function EnergyScreen() {
                     Theo thiết bị
                 </Text>
                 <View style={{ gap: Spacing.sm, marginBottom: Spacing.xl }}>
-                    {breakdown.map((item, i) => {
-                        const iconName = item.icon as keyof typeof Feather.glyphMap;
+                    {daily.breakdown.map((item, i) => {
+                        const iconName = (item.device_type === 'ac'
+                            ? 'wind'
+                            : item.device_type === 'light'
+                                ? 'sun'
+                                : item.device_type === 'fan'
+                                    ? 'wind'
+                                    : item.device_type === 'sensor'
+                                        ? 'activity'
+                                        : 'cpu') as keyof typeof Feather.glyphMap;
                         return (
                             <Card key={i}>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.md }}>
@@ -87,20 +123,20 @@ export default function EnergyScreen() {
                                     </View>
                                     <View style={{ flex: 1 }}>
                                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: Spacing.xs }}>
-                                            <Text style={[Typography.bodyMedium, { color: colors.text }]}>{item.name}</Text>
-                                            <Text style={[Typography.bodyMedium, { color: colors.text }]}>{item.usage} kWh</Text>
+                                            <Text style={[Typography.bodyMedium, { color: colors.text }]}>{item.device_name}</Text>
+                                            <Text style={[Typography.bodyMedium, { color: colors.text }]}>{item.usage.toFixed(1)} kWh</Text>
                                         </View>
                                         {/* Progress bar */}
                                         <View style={{ height: 6, backgroundColor: colors.border, borderRadius: 3 }}>
                                             <View
                                                 style={{
-                                                    height: '100%', width: `${item.pct}%`, backgroundColor: colors.primary,
-                                                    borderRadius: 3, opacity: 0.5 + (item.pct / 100) * 0.5,
+                                                    height: '100%', width: `${item.percentage}%`, backgroundColor: colors.primary,
+                                                    borderRadius: 3, opacity: 0.5 + (item.percentage / 100) * 0.5,
                                                 }}
                                             />
                                         </View>
                                     </View>
-                                    <Text style={[Typography.captionMedium, { color: colors.textSecondary }]}>{item.pct}%</Text>
+                                    <Text style={[Typography.captionMedium, { color: colors.textSecondary }]}>{item.percentage.toFixed(0)}%</Text>
                                 </View>
                             </Card>
                         );

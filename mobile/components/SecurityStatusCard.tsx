@@ -6,7 +6,14 @@ import { Badge } from './ui/Badge';
 import { Spacing } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
 import { Feather } from '@expo/vector-icons';
-import { SecurityAlert } from '@/services/mockData';
+
+export interface SecurityAlert {
+    id: string;
+    message: string;
+    timestamp: string;
+    severity: 'low' | 'medium' | 'high';
+    icon?: string;
+}
 
 interface SecurityStatusCardProps {
     alert: SecurityAlert;

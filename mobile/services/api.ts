@@ -3,9 +3,9 @@
  * Handles auth tokens, request/response, and error handling.
  */
 
-const API_BASE_URL = __DEV__
-    ? 'http://192.168.1.100:8000'  // Local dev — change to your machine's IP
-    : 'https://api.smarthome.vn';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || (__DEV__
+    ? 'http://localhost:8000'
+    : 'https://api.smarthome.vn');
 
 // Token storage (in production, use SecureStore)
 let accessToken: string | null = null;
@@ -275,6 +275,41 @@ export const securityAPI = {
     summary: (homeId: string) => apiFetch<SecuritySummaryResponse>(`/security/summary?home_id=${homeId}`),
     events: (homeId: string, limit = 50) =>
         apiFetch<SecurityEventResponse[]>(`/security/events?home_id=${homeId}&limit=${limit}`),
+};
+
+// ============ SUGGESTIONS ============
+
+export interface SuggestionResponse {
+    id: number;
+    user_id: string;
+    action_type: 'SCHEDULE' | 'ALERT' | 'AUTOMATION';
+    suggestion_text: string;
+    suggestion_json?: {
+        title?: string;
+        description?: string;
+        device_id?: string;
+        schedule_payload?: Record<string, unknown>;
+    };
+    was_accepted?: boolean | null;
+    created_at: string;
+}
+
+export interface SuggestionsListResponse {
+    total: number;
+    suggestions: SuggestionResponse[];
+}
+
+export const suggestionsAPI = {
+    listMine: (limit = 20, offset = 0) =>
+        apiFetch<SuggestionsListResponse>(`/suggestions/me?limit=${limit}&offset=${offset}`),
+    accept: (suggestionId: number, wasAccepted: boolean) =>
+        apiFetch<SuggestionResponse>(`/suggestions/${suggestionId}/accept`, {
+            method: 'POST',
+            body: JSON.stringify({
+                was_accepted: wasAccepted,
+                action_taken: wasAccepted ? 'ACCEPTED' : 'DISMISSED',
+            }),
+        }),
 };
 
 export { API_BASE_URL };

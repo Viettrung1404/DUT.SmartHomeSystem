@@ -6,10 +6,19 @@ import { Toggle } from './ui/Toggle';
 import { Spacing } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
 import { Feather } from '@expo/vector-icons';
-import { Automation } from '@/services/mockData';
+
+export interface AutomationCardModel {
+    id: string;
+    name: string;
+    isEnabled: boolean;
+    conditionSummary: string;
+    actionSummary: string;
+    icon?: string;
+    lastRun?: string;
+}
 
 interface AutomationCardProps {
-    automation: Automation;
+    automation: AutomationCardModel;
     onToggle: (id: string, value: boolean) => void;
 }
 

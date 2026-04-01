@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, Pressable } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -11,16 +11,61 @@ import { Badge } from '@/components/ui/Badge';
 import { Spacing, BorderRadius } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
 import { Feather } from '@expo/vector-icons';
-import { mockDevices, Device } from '@/services/mockData';
+import { devicesAPI, DeviceResponse } from '@/services/api';
+
+interface DeviceViewModel {
+    id: string;
+    name: string;
+    type: string;
+    icon?: string;
+    isOnline: boolean;
+    isOn: boolean;
+    brightness?: number;
+    temperature?: number;
+    targetTemp?: number;
+    mode?: string;
+    humidity?: number;
+    battery?: number;
+    isLocked?: boolean;
+}
+
+function mapDevice(response: DeviceResponse): DeviceViewModel {
+    return {
+        id: response.id,
+        name: response.name,
+        type: response.type,
+        icon: response.type,
+        isOnline: response.online_status,
+        isOn: response.status,
+        brightness: typeof response.metadata?.brightness === 'number' ? response.metadata.brightness : undefined,
+        temperature: typeof response.metadata?.temperature === 'number' ? response.metadata.temperature : undefined,
+        targetTemp: typeof response.metadata?.target_temp === 'number' ? response.metadata.target_temp : undefined,
+        mode: typeof response.metadata?.mode === 'string' ? response.metadata.mode : undefined,
+        humidity: typeof response.metadata?.humidity === 'number' ? response.metadata.humidity : undefined,
+        battery: typeof response.metadata?.battery === 'number' ? response.metadata.battery : undefined,
+        isLocked: typeof response.metadata?.is_locked === 'boolean' ? response.metadata.is_locked : undefined,
+    };
+}
 
 export default function DeviceDetailScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
     const { colors } = useTheme();
+    const [device, setDevice] = useState<DeviceViewModel | undefined>(undefined);
 
-    // Find device across all rooms
-    const allDevices = Object.values(mockDevices).flat();
-    const foundDevice = allDevices.find((d) => d.id === id);
-    const [device, setDevice] = useState<Device | undefined>(foundDevice);
+    useEffect(() => {
+        if (!id) return;
+        loadDevice(id);
+    }, [id]);
+
+    const loadDevice = async (deviceId: string) => {
+        try {
+            const response = await devicesAPI.get(deviceId);
+            setDevice(mapDevice(response));
+        } catch (error) {
+            console.error('Failed to load device:', error);
+            setDevice(undefined);
+        }
+    };
 
     if (!device) {
         return (
@@ -30,8 +75,29 @@ export default function DeviceDetailScreen() {
         );
     }
 
-    const updateDevice = (updates: Partial<Device>) => {
+    const updateDevice = (updates: Partial<DeviceViewModel>) => {
         setDevice((prev) => prev ? { ...prev, ...updates } : prev);
+    };
+
+    const toggleDevice = async (value: boolean) => {
+        if (!device) return;
+        updateDevice({ isOn: value });
+        try {
+            await devicesAPI.toggle(device.id, value);
+        } catch (error) {
+            console.error('Failed to toggle device:', error);
+            updateDevice({ isOn: !value });
+        }
+    };
+
+    const sendCommand = async (command: string, value?: unknown) => {
+        if (!device) return;
+        try {
+            const updated = await devicesAPI.command(device.id, command, value);
+            setDevice(mapDevice(updated));
+        } catch (error) {
+            console.error(`Failed to send command ${command}:`, error);
+        }
     };
 
     const iconName = (device.icon || 'circle') as keyof typeof Feather.glyphMap;
@@ -59,7 +125,7 @@ export default function DeviceDetailScreen() {
                         </Text>
                         <Toggle
                             value={device.isOn}
-                            onToggle={(val) => updateDevice({ isOn: val })}
+                            onToggle={toggleDevice}
                             disabled={!device.isOnline}
                         />
                     </View>
@@ -71,7 +137,10 @@ export default function DeviceDetailScreen() {
                         <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Độ sáng</Text>
                         <Slider
                             value={device.brightness ?? 0}
-                            onValueChange={(val) => updateDevice({ brightness: val })}
+                                onValueChange={(val) => {
+                                    updateDevice({ brightness: val });
+                                    sendCommand('set_brightness', val);
+                                }}
                             label="Độ sáng"
                             unit="%"
                             disabled={!device.isOn || !device.isOnline}
@@ -94,7 +163,10 @@ export default function DeviceDetailScreen() {
                             </View>
                             <Slider
                                 value={device.targetTemp ?? 24}
-                                onValueChange={(val) => updateDevice({ targetTemp: val })}
+                                onValueChange={(val) => {
+                                    updateDevice({ targetTemp: val });
+                                    sendCommand('set_temperature', val);
+                                }}
                                 label="Mục tiêu"
                                 unit="°C"
                                 min={16}
@@ -110,7 +182,10 @@ export default function DeviceDetailScreen() {
                                 {['Cool', 'Dry', 'Fan'].map((mode) => (
                                     <Pressable
                                         key={mode}
-                                        onPress={() => updateDevice({ mode })}
+                                        onPress={() => {
+                                            updateDevice({ mode });
+                                            sendCommand('set_mode', mode);
+                                        }}
                                         style={{
                                             flex: 1,
                                             paddingVertical: Spacing.md,

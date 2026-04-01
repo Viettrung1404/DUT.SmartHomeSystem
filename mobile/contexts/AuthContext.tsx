@@ -4,7 +4,7 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { authAPI, setTokens, clearTokens, UserResponse, LoginResponse } from '@/services/api';
+import { authAPI, setTokens, clearTokens, getAccessToken, UserResponse, LoginResponse } from '@/services/api';
 
 interface AuthState {
     user: UserResponse | null;
@@ -34,6 +34,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, []);
 
     async function loadUser() {
+        if (!getAccessToken()) {
+            setState({ user: null, isAuthenticated: false, isLoading: false });
+            return;
+        }
+
         try {
             const user = await authAPI.me();
             setState({ user, isAuthenticated: true, isLoading: false });

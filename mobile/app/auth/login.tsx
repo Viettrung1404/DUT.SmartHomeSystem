@@ -8,16 +8,18 @@ import { Button } from '@/components/ui/Button';
 import { Spacing, BorderRadius } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
 import { Feather } from '@expo/vector-icons';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function LoginScreen() {
     const { colors } = useTheme();
     const router = useRouter();
+    const { login } = useAuth();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
 
-    const handleLogin = () => {
+    const handleLogin = async () => {
         const newErrors: typeof errors = {};
         if (!email) newErrors.email = 'Vui lòng nhập email';
         else if (!email.includes('@')) newErrors.email = 'Email không hợp lệ';
@@ -27,11 +29,18 @@ export default function LoginScreen() {
         setErrors(newErrors);
         if (Object.keys(newErrors).length > 0) return;
 
-        setLoading(true);
-        setTimeout(() => {
-            setLoading(false);
+        try {
+            setLoading(true);
+            await login(email.trim(), password);
             router.replace('/(tabs)');
-        }, 1500);
+        } catch (error: any) {
+            setErrors((prev) => ({
+                ...prev,
+                password: error?.message || 'Đăng nhập thất bại',
+            }));
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (

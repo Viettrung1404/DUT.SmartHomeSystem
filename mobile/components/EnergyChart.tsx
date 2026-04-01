@@ -5,7 +5,7 @@ import { Card } from './ui/Card';
 import { BorderRadius, Spacing } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
 import { Feather } from '@expo/vector-icons';
-import { EnergyDataPoint } from '@/services/mockData';
+import { EnergyDataPoint } from '@/services/api';
 
 interface EnergyChartProps {
     dailyData: EnergyDataPoint[];

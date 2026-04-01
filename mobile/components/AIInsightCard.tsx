@@ -6,7 +6,13 @@ import { Button } from './ui/Button';
 import { Spacing } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
 import { Feather } from '@expo/vector-icons';
-import { AIInsight } from '@/services/mockData';
+
+export interface AIInsight {
+    id: string;
+    message: string;
+    type: 'warning' | 'info' | 'suggestion';
+    icon?: string;
+}
 
 interface AIInsightCardProps {
     insight: AIInsight;

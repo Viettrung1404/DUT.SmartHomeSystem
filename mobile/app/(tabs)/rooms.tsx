@@ -1,26 +1,72 @@
-import React from 'react';
-import { View, Text, FlatList } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, FlatList, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Header } from '@/components/ui/Header';
-import { RoomCard } from '@/components/RoomCard';
+import { RoomCard, RoomCardModel } from '@/components/RoomCard';
 import { Spacing } from '@/constants/theme';
-import { mockRooms, Room } from '@/services/mockData';
+import { homesAPI, roomsAPI } from '@/services/api';
 
 export default function RoomsScreen() {
     const { colors } = useTheme();
     const router = useRouter();
+    const [rooms, setRooms] = useState<RoomCardModel[]>([]);
+    const [loading, setLoading] = useState(true);
 
-    const handleRoomPress = (room: Room) => {
+    useEffect(() => {
+        loadRooms();
+    }, []);
+
+    const loadRooms = async () => {
+        try {
+            setLoading(true);
+            const homes = await homesAPI.list();
+            if (!homes.length) {
+                setRooms([]);
+                return;
+            }
+
+            const response = await roomsAPI.list(homes[0].id);
+            setRooms(
+                response.map((room) => ({
+                    id: room.id,
+                    name: room.name,
+                    icon: room.icon || 'home',
+                    isOnline: room.is_online,
+                    activeDevices: room.active_devices,
+                    deviceCount: room.device_count,
+                    energyToday: room.energy_today,
+                })),
+            );
+        } catch (error) {
+            console.error('Failed to load rooms:', error);
+            setRooms([]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleRoomPress = (room: RoomCardModel) => {
         router.push({ pathname: '/room/[id]', params: { id: room.id } });
     };
 
+    if (loading) {
+        return (
+            <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+                <Header title="Phòng" subtitle="Đang tải..." />
+                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                    <ActivityIndicator size="large" color={colors.primary} />
+                </View>
+            </SafeAreaView>
+        );
+    }
+
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-            <Header title="Phòng" subtitle={`${mockRooms.length} phòng`} />
+            <Header title="Phòng" subtitle={`${rooms.length} phòng`} />
             <FlatList
-                data={mockRooms}
+                data={rooms}
                 keyExtractor={(item) => item.id}
                 numColumns={2}
                 contentContainerStyle={{ padding: Spacing.md, gap: Spacing.sm }}
