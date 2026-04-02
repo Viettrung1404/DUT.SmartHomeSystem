@@ -8,6 +8,29 @@ import { RoomCard, RoomCardModel } from '@/components/RoomCard';
 import { Spacing } from '@/constants/theme';
 import { homesAPI, roomsAPI } from '@/services/api';
 
+const ROOM_ICON_RULES: Array<{ match: RegExp; icon: string }> = [
+    { match: /khach|living/, icon: 'tv' },
+    { match: /ngu|bed/, icon: 'moon' },
+    { match: /bep|kitchen/, icon: 'coffee' },
+    { match: /tam|bath/, icon: 'droplet' },
+    { match: /ban cong|balcony/, icon: 'sun' },
+    { match: /gara|garage/, icon: 'truck' },
+    { match: /lam viec|office/, icon: 'briefcase' },
+    { match: /tre|kids|child/, icon: 'smile' },
+    { match: /kho|storage/, icon: 'archive' },
+];
+
+function normalizeRoomName(name: string) {
+    return name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function resolveRoomIcon(name: string, icon?: string | null) {
+    if (icon) return icon;
+    const normalized = normalizeRoomName(name);
+    const rule = ROOM_ICON_RULES.find((item) => item.match.test(normalized));
+    return rule?.icon ?? 'home';
+}
+
 export default function RoomsScreen() {
     const { colors } = useTheme();
     const router = useRouter();
@@ -32,11 +55,10 @@ export default function RoomsScreen() {
                 response.map((room) => ({
                     id: room.id,
                     name: room.name,
-                    icon: room.icon || 'home',
+                    icon: resolveRoomIcon(room.name, room.icon),
                     isOnline: room.is_online,
                     activeDevices: room.active_devices,
                     deviceCount: room.device_count,
-                    energyToday: room.energy_today,
                 })),
             );
         } catch (error) {
@@ -64,7 +86,12 @@ export default function RoomsScreen() {
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-            <Header title="Phòng" subtitle={`${rooms.length} phòng`} />
+            <Header
+                title="Phòng"
+                subtitle={`${rooms.length} phòng`}
+                rightIcon="settings"
+                onRightPress={() => router.push('/rooms/manage')}
+            />
             <FlatList
                 data={rooms}
                 keyExtractor={(item) => item.id}

@@ -11,6 +11,7 @@ import json
 import os
 import sys
 from datetime import datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -25,11 +26,23 @@ from src.entities.models import (
 
 DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/smarthome")
 TZ     = ZoneInfo("Asia/Ho_Chi_Minh")
+ANALYTICS_CONFIG_PATH = Path(__file__).with_name("analytics_best_config.json")
 
 # ─── Ngưỡng tối thiểu để chạy analytics ─────────────────────────────────────
 MIN_DAYS_RULE_BASED = 7    # Rule-based cần ít nhất 7 ngày
 MIN_DAYS_KMEANS     = 30   # KMeans cần ít nhất 30 ngày
 MIN_USERS_KMEANS    = 2    # KMeans vô nghĩa với 1 user
+
+
+def load_analytics_config() -> dict:
+    """Load best model/params exported from notebook, return empty config if missing."""
+    try:
+        if ANALYTICS_CONFIG_PATH.exists():
+            with open(ANALYTICS_CONFIG_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"[WARN] Không đọc được config {ANALYTICS_CONFIG_PATH}: {e}")
+    return {}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -227,7 +240,7 @@ def label_cluster(centroid: np.ndarray) -> str:
     return "irregular"
 
 
-def run_kmeans(session: Session, home_id, user_ids: list, lookback_days=60):
+def run_kmeans(session: Session, home_id, user_ids: list, lookback_days=60, params: dict | None = None):
     """Train KMeans và lưu kết quả vào user_patterns."""
     try:
         from sklearn.cluster import KMeans
@@ -251,9 +264,19 @@ def run_kmeans(session: Session, home_id, user_ids: list, lookback_days=60):
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
-    # Elbow: dùng k=2 vì chỉ có 2 user trong demo
-    n_clusters = min(len(valid_user_ids), 3)
-    km = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+    params = params or {}
+    requested_k = int(params.get("n_clusters", 3))
+    n_clusters = max(2, min(len(valid_user_ids), requested_k))
+    n_init = int(params.get("n_init", 10))
+    max_iter = int(params.get("max_iter", 300))
+    random_state = int(params.get("random_state", 42))
+
+    km = KMeans(
+        n_clusters=n_clusters,
+        random_state=random_state,
+        n_init=n_init,
+        max_iter=max_iter,
+    )
     labels = km.fit_predict(X_scaled)
 
     # Deactivate CLUSTER patterns cũ
@@ -288,7 +311,113 @@ def run_kmeans(session: Session, home_id, user_ids: list, lookback_days=60):
         ))
 
     session.flush()
-    print(f"    → KMeans k={n_clusters}, {len(valid_user_ids)} users clustered")
+    print(f"    → KMeans k={n_clusters}, n_init={n_init}, users={len(valid_user_ids)}")
+
+
+def run_dbscan(session: Session, home_id, user_ids: list, lookback_days=60, params: dict | None = None):
+    """Train DBSCAN và lưu kết quả vào user_patterns (pattern_type=CLUSTER)."""
+    try:
+        from sklearn.cluster import DBSCAN
+        from sklearn.preprocessing import StandardScaler
+    except ImportError:
+        print("  [SKIP DBSCAN] scikit-learn chưa cài: pip install scikit-learn")
+        return
+
+    vectors, valid_user_ids = [], []
+    for uid in user_ids:
+        vec = extract_feature_vector(session, home_id, uid, lookback_days)
+        if vec is not None:
+            vectors.append(vec)
+            valid_user_ids.append(uid)
+
+    if len(valid_user_ids) < MIN_USERS_KMEANS:
+        print(f"  [SKIP DBSCAN] Chỉ có {len(valid_user_ids)} user đủ data (cần {MIN_USERS_KMEANS})")
+        return
+
+    params = params or {}
+    eps = float(params.get("eps", 0.5))
+    min_samples = int(params.get("min_samples", 5))
+
+    X = np.array(vectors)
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    db = DBSCAN(eps=eps, min_samples=min_samples)
+    labels = db.fit_predict(X_scaled)
+
+    unique_clusters = sorted([int(x) for x in set(labels) if int(x) != -1])
+    noise_ratio = float(np.mean(labels == -1)) if len(labels) > 0 else 1.0
+
+    cluster_centroids_scaled = {}
+    for cid in unique_clusters:
+        member_idx = np.where(labels == cid)[0]
+        if len(member_idx) > 0:
+            cluster_centroids_scaled[cid] = np.mean(X_scaled[member_idx], axis=0)
+
+    for uid in valid_user_ids:
+        session.execute(text("""
+            UPDATE user_patterns
+            SET is_active = false
+            WHERE user_id = :uid AND home_id = :hid AND pattern_type = 'CLUSTER'
+        """), {"uid": str(uid), "hid": str(home_id)})
+
+    for uid, label_idx, vec in zip(valid_user_ids, labels, vectors):
+        cluster_id = int(label_idx)
+
+        if cluster_id == -1:
+            cluster_name = "irregular"
+            label_vn = "Ngoai le cum (noise)"
+            confidence = max(0.5, 0.8 - noise_ratio)
+        else:
+            centroid_scaled = cluster_centroids_scaled.get(cluster_id)
+            if centroid_scaled is None:
+                cluster_name = "irregular"
+            else:
+                centroid_orig = scaler.inverse_transform([centroid_scaled])[0]
+                cluster_name = label_cluster(centroid_orig)
+            label_vn = CLUSTER_LABELS.get(cluster_name, cluster_name)
+            confidence = max(0.7, 1.0 - noise_ratio)
+
+        peak_hour = int(np.argmax(vec[:24]))
+
+        session.add(UserPattern(
+            user_id=uid,
+            home_id=home_id,
+            device_id=None,
+            pattern_type=PatternType.CLUSTER,
+            pattern_data={
+                "cluster_id": cluster_id,
+                "cluster_name": cluster_name,
+                "label_vn": label_vn,
+                "peak_hour": peak_hour,
+                "weekend_ratio": round(float(vec[25]), 2),
+                "avg_dur_hours": round(float(vec[26]), 2),
+                "noise_ratio": round(noise_ratio, 3),
+                "model": "DBSCAN",
+            },
+            confidence=round(float(confidence), 2),
+        ))
+
+    session.flush()
+    print(
+        f"    → DBSCAN eps={eps}, min_samples={min_samples}, "
+        f"clusters={len(unique_clusters)}, noise_ratio={noise_ratio:.2f}, users={len(valid_user_ids)}"
+    )
+
+
+def run_clustering(session: Session, home_id, user_ids: list, lookback_days=60, analytics_cfg: dict | None = None):
+    """Dispatch clustering model based on analytics_best_config.json, fallback to KMeans."""
+    analytics_cfg = analytics_cfg or {}
+    cluster_cfg = analytics_cfg.get("clustering") or {}
+    model_name = str(cluster_cfg.get("model", "KMeans")).upper()
+    params = cluster_cfg.get("params") or {}
+
+    if model_name == "DBSCAN":
+        print("\n  [Clustering: DBSCAN]")
+        run_dbscan(session, home_id, user_ids, lookback_days=lookback_days, params=params)
+    else:
+        print("\n  [Clustering: KMeans]")
+        run_kmeans(session, home_id, user_ids, lookback_days=lookback_days, params=params)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -391,6 +520,8 @@ def run_full_pipeline(session: Session = None):
 
     try:
         with session.begin():
+            analytics_cfg = load_analytics_config()
+
             # Lấy tất cả home đang active
             homes = session.execute(text(
                 "SELECT id FROM homes WHERE is_active = true"
@@ -435,8 +566,13 @@ def run_full_pipeline(session: Session = None):
                         save_anomalies(session, home_id, uid, anomalies)
 
                 if days_available >= MIN_DAYS_KMEANS and len(user_ids) >= MIN_USERS_KMEANS:
-                    print("\n  [KMeans]")
-                    run_kmeans(session, home_id, user_ids, lookback_days=60)
+                    run_clustering(
+                        session,
+                        home_id,
+                        user_ids,
+                        lookback_days=60,
+                        analytics_cfg=analytics_cfg,
+                    )
 
     finally:
         if should_close:

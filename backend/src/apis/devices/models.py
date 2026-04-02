@@ -11,7 +11,9 @@ class DeviceCreate(BaseModel):
 
 
 class DeviceUpdate(BaseModel):
+    room_id: Optional[str] = None
     name: Optional[str] = None
+    type: Optional[str] = None
     metadata: Optional[dict] = None
 
 

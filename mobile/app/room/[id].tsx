@@ -56,7 +56,6 @@ export default function RoomDetailScreen() {
     const [room, setRoom] = useState<{
         id: string;
         name: string;
-        energyToday: number;
     } | null>(null);
     const [homeId, setHomeId] = useState<string | null>(null);
     const [devices, setDevices] = useState<DeviceCardModel[]>([]);
@@ -96,7 +95,6 @@ export default function RoomDetailScreen() {
             setRoom({
                 id: roomResponse.id,
                 name: roomResponse.name,
-                energyToday: roomResponse.energy_today,
             });
             setHomeId(roomResponse.home_id);
 
@@ -164,7 +162,13 @@ export default function RoomDetailScreen() {
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-            <Header title={room.name} showBack subtitle={`${devices.length} thiết bị`} />
+            <Header
+                title={room.name}
+                showBack
+                subtitle={`${devices.length} thiết bị`}
+                rightIcon="settings"
+                onRightPress={() => router.push({ pathname: '/room/[id]/manage', params: { id: room.id } } as never)}
+            />
 
             {/* Room Stats */}
             <View style={{ flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.md, marginBottom: Spacing.md }}>
@@ -178,12 +182,6 @@ export default function RoomDetailScreen() {
                     <View style={{ alignItems: 'center' }}>
                         <Text style={[Typography.number, { color: colors.success }]}>{onlineCount}</Text>
                         <Text style={[Typography.caption, { color: colors.textSecondary }]}>Online</Text>
-                    </View>
-                </Card>
-                <Card style={{ flex: 1, paddingVertical: Spacing.sm }}>
-                    <View style={{ alignItems: 'center' }}>
-                        <Text style={[Typography.number, { color: colors.warning }]}>{room.energyToday}</Text>
-                        <Text style={[Typography.caption, { color: colors.textSecondary }]}>kWh</Text>
                     </View>
                 </Card>
             </View>

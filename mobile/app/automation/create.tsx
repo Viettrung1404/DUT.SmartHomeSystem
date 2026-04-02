@@ -20,7 +20,6 @@ const conditions: StepItem[] = [
     { type: 'time', label: 'Theo thời gian', icon: 'clock' },
     { type: 'device', label: 'Trạng thái thiết bị', icon: 'cpu' },
     { type: 'motion', label: 'Phát hiện chuyển động', icon: 'activity' },
-    { type: 'energy', label: 'Mức điện năng', icon: 'zap' },
     { type: 'temperature', label: 'Nhiệt độ', icon: 'thermometer' },
 ];
 

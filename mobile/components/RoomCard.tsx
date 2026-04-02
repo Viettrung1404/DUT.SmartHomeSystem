@@ -14,7 +14,6 @@ export interface RoomCardModel {
     isOnline: boolean;
     activeDevices: number;
     deviceCount: number;
-    energyToday: number;
 }
 
 interface RoomCardProps {
@@ -55,12 +54,6 @@ export function RoomCard({ room, onPress }: RoomCardProps) {
                 </Text>
             </View>
 
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginTop: Spacing.xs }}>
-                <Feather name="zap" size={12} color={colors.warning} />
-                <Text style={[Typography.caption, { color: colors.textSecondary }]}>
-                    {room.energyToday} kWh
-                </Text>
-            </View>
         </Card>
     );
 }

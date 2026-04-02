@@ -3,7 +3,6 @@ import { Tabs, Redirect } from 'expo-router';
 import { View, StyleSheet } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Feather } from '@expo/vector-icons';
-import { BorderRadius } from '@/constants/theme';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -51,11 +50,11 @@ export default function TabLayout() {
         name="suggestions"
         options={{
           title: 'Suggestions',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="lightbulb.fill" color={color} />,
+          tabBarIcon: ({ color, size }) => <Feather name="sun" size={22} color={color} />,
         }}
       />
       <Tabs.Screen
-        name="profile"
+        name="rooms"
         options={{
           title: 'Phòng',
           tabBarIcon: ({ color, size }) => <Feather name="grid" size={22} color={color} />,

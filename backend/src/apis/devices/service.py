@@ -125,6 +125,38 @@ def send_command(db: Session, device_id: UUID, user_id: UUID, data: models.Devic
     return device
 
 
+def update_device(db: Session, device_id: UUID, user_id: UUID, data: models.DeviceUpdate) -> Device:
+    device = get_device(db, device_id, user_id)
+
+    if data.room_id:
+        target_room = db.query(Room).filter(Room.id == UUID(data.room_id)).first()
+        if not target_room:
+            raise RoomNotFoundError(data.room_id)
+        member = db.query(HomeMember).filter(
+            HomeMember.home_id == target_room.home_id, HomeMember.user_id == user_id
+        ).first()
+        if not member:
+            raise ForbiddenError("Bạn không có quyền chuyển thiết bị sang phòng này")
+        device.room_id = target_room.id
+
+    if data.name is not None:
+        device.name = data.name
+    if data.type is not None:
+        device.type = data.type
+    if data.metadata is not None:
+        device.metadata_json = data.metadata
+
+    db.commit()
+    db.refresh(device)
+    return device
+
+
+def delete_device(db: Session, device_id: UUID, user_id: UUID) -> None:
+    device = get_device(db, device_id, user_id)
+    db.delete(device)
+    db.commit()
+
+
 def to_response(device: Device) -> models.DeviceResponse:
     return models.DeviceResponse(
         id=str(device.id),

@@ -64,9 +64,12 @@ async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
     # Startup
     logging.info("Starting Smart Home backend...")
-    Base.metadata.create_all(bind=engine)
-    _ensure_legacy_schema_compatibility()
-    logging.info("Database tables created")
+    try:
+        Base.metadata.create_all(bind=engine)
+        logging.info("Database tables created")
+    except Exception as e:
+        # Avoid blocking API startup in mixed-schema dev environments.
+        logging.warning(f"Skipping create_all due to schema mismatch: {e}")
 
     # Initialize MQTT with DB session factory and WS manager
     set_event_loop(asyncio.get_running_loop())
@@ -78,13 +81,19 @@ async def lifespan(app: FastAPI):
         logging.warning(f"MQTT client failed to start: {e}")
 
     # Initialize automation engine
-    init_automation_engine(SessionLocal)
-    logging.info("Automation engine initialized")
+    try:
+        init_automation_engine(SessionLocal)
+        logging.info("Automation engine initialized")
+    except Exception as e:
+        logging.warning(f"Automation engine failed to start: {e}")
 
     yield
 
     # Shutdown
-    stop_automation_engine()
+    try:
+        stop_automation_engine()
+    except Exception:
+        pass
     logging.info("Smart Home backend stopped")
 
 
