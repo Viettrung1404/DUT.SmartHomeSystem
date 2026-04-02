@@ -8,8 +8,7 @@ import {
   ActivityIndicator,
   StyleSheet,
 } from 'react-native';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
@@ -31,7 +30,7 @@ interface Suggestion {
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
 
 export default function SuggestionsScreen() {
-  const colorScheme = useColorScheme();
+  const { colors } = useTheme();
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -122,7 +121,7 @@ export default function SuggestionsScreen() {
     return (
       <ThemedView style={styles.container}>
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color={Colors[colorScheme ?? 'light'].tint} />
+          <ActivityIndicator size="large" color={colors.primary} />
           <ThemedText style={styles.loadingText}>Đang tải gợi ý...</ThemedText>
         </View>
       </ThemedView>

@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+import json
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from src.database.core import get_db
 from src.apis.suggestions.models import SuggestionResponse, SuggestionsListResponse, SuggestionAcceptRequest
 from src.apis.suggestions.service import SuggestionService
-from src.entities.models import SuggestionLog
 
 router = APIRouter(prefix="/suggestions", tags=["suggestions"])
 
@@ -64,9 +64,7 @@ def get_my_suggestions(
     )
     
     # Convert ORM objects to Pydantic models
-    suggestion_responses = [
-        SuggestionResponse.model_validate(s) for s in suggestions
-    ]
+    suggestion_responses = [SuggestionResponse.model_validate(s) for s in suggestions]
     
     return SuggestionsListResponse(
         total=total,
@@ -80,14 +78,17 @@ def get_suggestion_detail(
     db: Session = Depends(get_db),
 ):
     """Lấy chi tiết 1 gợi ý."""
-    suggestion = db.query(SuggestionLog).filter(
-        SuggestionLog.id == suggestion_id
-    ).first()
+    suggestion = db.execute(text("""
+        SELECT id, user_id, pattern_id, action_type::text AS action_type,
+               suggestion_text, suggestion_json, was_accepted, created_at
+        FROM suggestion_logs
+        WHERE id = :id
+    """), {"id": suggestion_id}).mappings().first()
     
     if not suggestion:
         raise HTTPException(status_code=404, detail="Suggestion not found")
     
-    return SuggestionResponse.model_validate(suggestion)
+    return SuggestionResponse.model_validate(dict(suggestion))
 
 
 @router.post("/{suggestion_id}/accept", response_model=SuggestionResponse)
@@ -112,12 +113,23 @@ def accept_suggestion(
     if not suggestion:
         raise HTTPException(status_code=404, detail="Suggestion not found")
     
-    # Nếu thêm action_taken, lưu vào metadata
+    # Nếu thêm action_taken, lưu vào JSONB metadata
     if request.action_taken:
-        if suggestion.suggestion_json is None:
-            suggestion.suggestion_json = {}
-        suggestion.suggestion_json["action_taken"] = request.action_taken
+        db.execute(text("""
+            UPDATE suggestion_logs
+            SET suggestion_json = COALESCE(suggestion_json, '{}'::jsonb) || CAST(:payload AS jsonb)
+            WHERE id = :id
+        """), {
+            "id": suggestion_id,
+            "payload": json.dumps({"action_taken": request.action_taken}),
+        })
         db.commit()
+        suggestion = db.execute(text("""
+            SELECT id, user_id, pattern_id, action_type::text AS action_type,
+                   suggestion_text, suggestion_json, was_accepted, created_at
+            FROM suggestion_logs
+            WHERE id = :id
+        """), {"id": suggestion_id}).mappings().first()
     
     return SuggestionResponse.model_validate(suggestion)
 

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, ScrollView, FlatList, Pressable } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Card } from '@/components/ui/Card';
@@ -15,6 +15,9 @@ export default function DashboardScreen() {
   const { colors, toggleTheme, isDark } = useTheme();
   const router = useRouter();
   const [insights, setInsights] = useState(mockAIInsights);
+  const settingsRoute = '/settings' as unknown as Href;
+  const energyRoute = '/energy' as unknown as Href;
+  const roomsRoute = '/(tabs)/rooms' as unknown as Href;
 
   const energyChange = ((mockHome.energyToday - mockHome.energyYesterday) / mockHome.energyYesterday * 100).toFixed(0);
   const isEnergyUp = mockHome.energyToday > mockHome.energyYesterday;
@@ -41,7 +44,7 @@ export default function DashboardScreen() {
                 <Feather name={isDark ? 'sun' : 'moon'} size={18} color={colors.icon} />
               </Pressable>
               <Pressable
-                onPress={() => router.push('/settings')}
+                onPress={() => router.push(settingsRoute)}
                 style={{
                   width: 40, height: 40, borderRadius: 20,
                   backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center',
@@ -64,7 +67,7 @@ export default function DashboardScreen() {
         <View style={{ flexDirection: 'row', gap: Spacing.sm, padding: Spacing.md }}>
           {/* Energy card */}
           <Card
-            onPress={() => router.push('/energy')}
+            onPress={() => router.push(energyRoute)}
             style={{ flex: 1 }}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.xs }}>
@@ -137,7 +140,7 @@ export default function DashboardScreen() {
         <View style={{ padding: Spacing.md, paddingTop: 0 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md }}>
             <Text style={[Typography.h3, { color: colors.text }]}>Phòng</Text>
-            <Pressable onPress={() => router.push('/(tabs)/rooms')}>
+            <Pressable onPress={() => router.push(roomsRoute)}>
               <Text style={[Typography.captionMedium, { color: colors.primary }]}>Xem tất cả</Text>
             </Pressable>
           </View>
@@ -147,7 +150,7 @@ export default function DashboardScreen() {
               return (
                 <Pressable
                   key={room.id}
-                  onPress={() => router.push({ pathname: '/room/[id]', params: { id: room.id } })}
+                  onPress={() => router.push({ pathname: '/room/[id]' as never, params: { id: room.id } } as never)}
                   style={{
                     backgroundColor: colors.card,
                     borderRadius: BorderRadius.lg,
