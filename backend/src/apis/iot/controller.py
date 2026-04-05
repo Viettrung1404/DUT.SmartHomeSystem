@@ -1,0 +1,91 @@
+from typing import Any, Dict
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+
+from ...mqtt_client import publish_command, get_last_status, get_mqtt_debug
+
+router = APIRouter(
+    prefix="/iot",
+    tags=["IoT"],
+)
+
+
+class IoTCommandRequest(BaseModel):
+    command: str
+
+
+class IoTCommandResponse(BaseModel):
+    ok: bool
+    command: str
+
+
+ALLOWED_COMMANDS = {
+    "den khach on",
+    "den khach off",
+    "den khach toggle",
+    "den ngu on",
+    "den ngu off",
+    "den ngu toggle",
+    "quat khach on",
+    "quat khach off",
+    "quat khach weak",
+    "quat khach strong",
+    "quat khach toggle",
+    "quat ngu on",
+    "quat ngu off",
+    "quat ngu weak",
+    "quat ngu strong",
+    "quat ngu toggle",
+    "light on",
+    "light off",
+    "light toggle",
+    "fan on",
+    "fan off",
+    "fan toggle",
+    "buzzer on",
+    "buzzer off",
+    "buzzer toggle",
+    "door open",
+    "door close",
+    "all on",
+    "all off",
+    "status",
+}
+
+
+@router.get("/status")
+async def iot_status() -> Dict[str, Any]:
+    return get_last_status()
+
+
+@router.get("/debug")
+async def iot_debug() -> Dict[str, Any]:
+    return get_mqtt_debug()
+
+
+@router.post("/command", response_model=IoTCommandResponse)
+async def iot_command(payload: IoTCommandRequest) -> IoTCommandResponse:
+    command = payload.command.strip().lower()
+    if command in {"on", "off", "toggle"}:
+        command = "den khach {}".format(command)
+
+    command_aliases = {
+        "light on": "den khach on",
+        "light off": "den khach off",
+        "light toggle": "den khach toggle",
+        "fan on": "quat khach on",
+        "fan off": "quat khach off",
+        "fan toggle": "quat khach toggle",
+        "quat khach yeu": "quat khach weak",
+        "quat khach manh": "quat khach strong",
+        "quat ngu yeu": "quat ngu weak",
+        "quat ngu manh": "quat ngu strong",
+    }
+    command = command_aliases.get(command, command)
+
+    if command not in ALLOWED_COMMANDS:
+        raise HTTPException(status_code=400, detail="Invalid command")
+
+    publish_command(command)
+    return IoTCommandResponse(ok=True, command=command)

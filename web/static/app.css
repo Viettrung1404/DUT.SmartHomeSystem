@@ -95,6 +95,18 @@ body {
   border-color: #f0c4b8;
 }
 
+.badge.wet {
+  background: #e2f0ff;
+  color: #1c4f7d;
+  border-color: #b8d2ef;
+}
+
+.badge.active {
+  background: #e5f6e9;
+  color: #21633f;
+  border-color: #b8dec3;
+}
+
 button {
   border: none;
   background: var(--accent);

@@ -31,7 +31,7 @@ I'm open to hearing your feedback about the template and what you'd like to see 
 
 # How to run locally without postgres or docker.
 - in database/core.py change the DATABASE_URL to sqlite
-- run `uvicorn src.main:app --reload`
+- run `uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload`
 
 # How to run tests.
 - Run `pytest` to run all tests
