@@ -89,6 +89,7 @@ GAS_PIN = int(os.getenv("GAS_PIN", "27"))
 BUZZER_PIN = int(os.getenv("BUZZER_PIN", "16"))
 RAIN_PIN = int(os.getenv("RAIN_PIN", "21"))
 RAIN_ACTIVE_LOW = os.getenv("RAIN_ACTIVE_LOW", "1").strip().lower() in {"1", "true", "yes", "on"}
+RAIN_LOG_INTERVAL_SECONDS = float(os.getenv("RAIN_LOG_INTERVAL_SECONDS", "30"))
 
 FACE_UPLOAD_URL = os.getenv("FACE_UPLOAD_URL", "http://192.168.1.201:8000/face/upload")
 FACE_VERIFY_URL = os.getenv("FACE_VERIFY_URL", "http://192.168.1.201:8000/face/verify")
@@ -140,6 +141,7 @@ door_lock = threading.Lock()
 door_pwm = None
 fan_khach_pwm = None
 fan_ngu_pwm = None
+last_rain_log_ts = 0.0
 
 
 def log(message):
@@ -263,15 +265,37 @@ def set_buzzer_state(is_on):
 
 
 def read_rain():
+    global last_rain_log_ts
     if GPIO is None:
         return
 
-    rain_detected = GPIO.input(RAIN_PIN) == GPIO.LOW if RAIN_ACTIVE_LOW else GPIO.input(RAIN_PIN) == GPIO.HIGH
+    raw_value = GPIO.input(RAIN_PIN)
+    rain_detected = raw_value == GPIO.LOW if RAIN_ACTIVE_LOW else raw_value == GPIO.HIGH
+    prev_rain_detected = state["rain_detected"]
     state["rain_detected"] = rain_detected
-    if rain_detected:
-        log("read_rain: RAIN DETECTED")
-    else:
-        log("read_rain: dry")
+
+    now = time.monotonic()
+    should_log_periodic = (now - last_rain_log_ts) >= RAIN_LOG_INTERVAL_SECONDS
+    if rain_detected != prev_rain_detected:
+        log(
+            "read_rain: state changed -> {} (raw={}, pin={}, active_low={})".format(
+                "RAIN DETECTED" if rain_detected else "DRY",
+                raw_value,
+                RAIN_PIN,
+                RAIN_ACTIVE_LOW,
+            )
+        )
+        last_rain_log_ts = now
+    elif should_log_periodic:
+        log(
+            "read_rain: {} (raw={}, pin={}, active_low={})".format(
+                "RAIN DETECTED" if rain_detected else "DRY",
+                raw_value,
+                RAIN_PIN,
+                RAIN_ACTIVE_LOW,
+            )
+        )
+        last_rain_log_ts = now
 
 
 def set_distance_light_state(is_on):
@@ -799,6 +823,7 @@ def face_capture_loop():
 def _post_face_image(url, image_bytes):
     image_b64 = base64.b64encode(image_bytes).decode("ascii")
     payload = {
+        "home_id": HOME_ID,
         "device_id": DEVICE_ID,
         "image_base64": image_b64,
     }
@@ -830,8 +855,8 @@ def face_send_loop():
                 verified = bool(result.get("verified")) if isinstance(result, dict) else False
                 log("face_verify: result={}".format(verified))
                 if verified:
-                    log("face_verify: match -> open door")
-                    _open_door_async()
+                    # Chỉ mở cửa qua MQTT (backend publish đúng home_id/device_id); không mở cửa cục bộ.
+                    log("face_verify: match -> expect door command on {}".format(COMMAND_TOPIC))
                     last_verify_ts = now
             else:
                 log("face_upload: sending to server")

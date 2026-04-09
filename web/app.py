@@ -3,11 +3,14 @@ import os
 from typing import Any, Dict, Tuple
 from urllib import request as urllib_request
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 
 from flask import Flask, jsonify, render_template, request
 
 WEB_PORT = int(os.getenv("WEB_PORT", "8001"))
 BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://127.0.0.1:8000")
+HOME_ID = os.getenv("HOME_ID", "home-001")
+DEVICE_ID = os.getenv("DEVICE_ID", "raspi-01")
 
 app = Flask(__name__)
 
@@ -77,7 +80,12 @@ def _backend_post_json(path: str, payload: Dict[str, Any]) -> Tuple[int, Dict[st
 
 @app.route("/")
 def index():
-    return render_template("index.html", backend_base_url=BACKEND_BASE_URL)
+    return render_template(
+        "index.html",
+        backend_base_url=BACKEND_BASE_URL,
+        home_id=HOME_ID,
+        device_id=DEVICE_ID,
+    )
 
 
 @app.route("/api/command", methods=["POST"])
@@ -121,13 +129,17 @@ def api_command():
     }:
         return jsonify({"error": "Invalid command"}), 400
 
-    status_code, payload = _backend_post_json("/iot/command", {"command": command})
+    status_code, payload = _backend_post_json(
+        "/iot/command",
+        {"command": command, "home_id": HOME_ID, "device_id": DEVICE_ID},
+    )
     return jsonify(payload), status_code
 
 
 @app.route("/api/status")
 def api_status():
-    status_code, payload = _backend_get_json("/iot/status")
+    q = "home_id={}&device_id={}".format(quote(HOME_ID, safe=""), quote(DEVICE_ID, safe=""))
+    status_code, payload = _backend_get_json("/iot/status?{}".format(q))
     if status_code != 200:
         merged = dict(DEFAULT_STATUS)
         merged["error"] = payload.get("detail", "backend error")

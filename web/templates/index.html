@@ -6,7 +6,11 @@
     <title>Smart Home MQTT Control</title>
     <link rel="stylesheet" href="/static/app.css" />
   </head>
-  <body data-backend-url="{{ backend_base_url }}">
+  <body
+    data-backend-url="{{ backend_base_url }}"
+    data-home-id="{{ home_id }}"
+    data-device-id="{{ device_id }}"
+  >
     <main class="page">
       <header class="header">
         <h1>Smart Home Control</h1>

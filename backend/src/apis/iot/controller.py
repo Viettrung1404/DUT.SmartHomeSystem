@@ -1,9 +1,10 @@
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from ...mqtt_client import publish_command, get_last_status, get_mqtt_debug
+from ...config.env import DEFAULT_HOME_ID, DEFAULT_DEVICE_ID
 
 router = APIRouter(
     prefix="/iot",
@@ -13,6 +14,8 @@ router = APIRouter(
 
 class IoTCommandRequest(BaseModel):
     command: str
+    home_id: Optional[str] = None
+    device_id: Optional[str] = None
 
 
 class IoTCommandResponse(BaseModel):
@@ -54,9 +57,22 @@ ALLOWED_COMMANDS = {
 }
 
 
+def _segment(value: Optional[str], default: str, field: str) -> str:
+    raw = (value if value is not None else default).strip()
+    safe = "".join(ch for ch in raw if ch.isalnum() or ch in "-_")
+    if not safe:
+        raise HTTPException(status_code=400, detail="Invalid {}".format(field))
+    return safe
+
+
 @router.get("/status")
-async def iot_status() -> Dict[str, Any]:
-    return get_last_status()
+async def iot_status(
+    home_id: Optional[str] = Query(default=None),
+    device_id: Optional[str] = Query(default=None),
+) -> Dict[str, Any]:
+    hid = _segment(home_id, DEFAULT_HOME_ID, "home_id")
+    did = _segment(device_id, DEFAULT_DEVICE_ID, "device_id")
+    return get_last_status(hid, did)
 
 
 @router.get("/debug")
@@ -87,5 +103,7 @@ async def iot_command(payload: IoTCommandRequest) -> IoTCommandResponse:
     if command not in ALLOWED_COMMANDS:
         raise HTTPException(status_code=400, detail="Invalid command")
 
-    publish_command(command)
+    hid = _segment(payload.home_id, DEFAULT_HOME_ID, "home_id")
+    did = _segment(payload.device_id, DEFAULT_DEVICE_ID, "device_id")
+    publish_command(command, hid, did)
     return IoTCommandResponse(ok=True, command=command)

@@ -166,6 +166,8 @@ async function loadStatus() {
   const faceImage = document.getElementById("face-image");
   const facePlaceholder = document.getElementById("face-placeholder");
   const backendUrl = document.body.dataset.backendUrl;
+  const homeId = document.body.dataset.homeId || "";
+  const deviceId = document.body.dataset.deviceId || "";
   if (faceImage && backendUrl) {
     faceImage.onload = () => {
       faceImage.style.display = "block";
@@ -179,7 +181,11 @@ async function loadStatus() {
         facePlaceholder.textContent = "No image yet";
       }
     };
-    faceImage.src = `${backendUrl}/face/last.jpg?ts=${Date.now()}`;
+    const idQuery =
+      homeId && deviceId
+        ? `home_id=${encodeURIComponent(homeId)}&device_id=${encodeURIComponent(deviceId)}&`
+        : "";
+    faceImage.src = `${backendUrl}/face/last.jpg?${idQuery}ts=${Date.now()}`;
   }
 }
 
