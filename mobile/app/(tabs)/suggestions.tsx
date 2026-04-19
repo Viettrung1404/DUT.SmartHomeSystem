@@ -11,27 +11,11 @@ import {
 import { useTheme } from '@/contexts/ThemeContext';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-
-interface Suggestion {
-  id: number;
-  user_id: string;
-  action_type: 'SCHEDULE' | 'ALERT' | 'AUTOMATION';
-  suggestion_text: string;
-  suggestion_json?: {
-    title?: string;
-    description?: string;
-    device_id?: string;
-    schedule_payload?: object;
-  };
-  was_accepted?: boolean | null;
-  created_at: string;
-}
-
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
+import { SuggestionResponse, suggestionsAPI } from '@/services/api';
 
 export default function SuggestionsScreen() {
-  const { colors } = useTheme();
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const colorScheme = useColorScheme();
+  const [suggestions, setSuggestions] = useState<SuggestionResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -42,19 +26,7 @@ export default function SuggestionsScreen() {
   const loadSuggestions = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/suggestions/me?limit=20`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          // TODO: Add token: `Bearer ${authToken}`
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
-      }
-
-      const data = await response.json();
+      const data = await suggestionsAPI.listMine(20, 0);
       setSuggestions(data.suggestions || []);
     } catch (error) {
       console.error('Failed to load suggestions:', error);
@@ -71,21 +43,8 @@ export default function SuggestionsScreen() {
 
   const handleAcceptSuggestion = async (suggestionId: number, accept: boolean) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/suggestions/${suggestionId}/accept`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          was_accepted: accept,
-          action_taken: accept ? 'ACCEPTED' : 'DISMISSED',
-        }),
-      });
-
-      if (response.ok) {
-        // Remove from list
-        setSuggestions(suggestions.filter(s => s.id !== suggestionId));
-      }
+      await suggestionsAPI.accept(suggestionId, accept);
+      setSuggestions(suggestions.filter(s => s.id !== suggestionId));
     } catch (error) {
       console.error('Failed to accept suggestion:', error);
     }

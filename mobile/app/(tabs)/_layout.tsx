@@ -1,11 +1,22 @@
 import React from 'react';
-import { Tabs } from 'expo-router';
+import { Tabs, Redirect } from 'expo-router';
+import { View, StyleSheet } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Feather } from '@expo/vector-icons';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function TabLayout() {
   const { colors } = useTheme();
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return null;
+  }
+
+  if (!isAuthenticated) {
+    return <Redirect href="/auth/login" />;
+  }
 
   return (
     <Tabs

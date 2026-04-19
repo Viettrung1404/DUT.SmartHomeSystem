@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, FlatList, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -9,10 +9,48 @@ import { SecurityStatusCard } from '@/components/SecurityStatusCard';
 import { Spacing, BorderRadius } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
 import { Feather } from '@expo/vector-icons';
-import { mockSecurityAlerts } from '@/services/mockData';
+import { homesAPI, securityAPI } from '@/services/api';
+import { SecurityAlert } from '@/components/SecurityStatusCard';
 
 export default function SecurityScreen() {
     const { colors } = useTheme();
+    const [alerts, setAlerts] = useState<SecurityAlert[]>([]);
+    const [riskLevel, setRiskLevel] = useState<'low' | 'medium' | 'high'>('low');
+
+    useEffect(() => {
+        loadSecurity();
+    }, []);
+
+    const loadSecurity = async () => {
+        try {
+            const homes = await homesAPI.list();
+            if (!homes.length) return;
+
+            const homeId = homes[0].id;
+            const [summary, events] = await Promise.all([
+                securityAPI.summary(homeId),
+                securityAPI.events(homeId, 20),
+            ]);
+
+            const normalizedRisk = (summary.risk_level === 'high' || summary.risk_level === 'medium')
+                ? summary.risk_level
+                : 'low';
+            setRiskLevel(normalizedRisk);
+            setAlerts(
+                events.map((event) => ({
+                    id: event.id,
+                    message: event.description,
+                    timestamp: new Date(event.timestamp).toLocaleString('vi-VN'),
+                    severity: event.severity === 'high' || event.severity === 'medium' ? event.severity : 'low',
+                    icon: event.event_type === 'door' ? 'door-open' : event.event_type === 'camera_offline' ? 'wifi-off' : 'alert-circle',
+                })),
+            );
+        } catch (error) {
+            console.error('Failed to load security data:', error);
+            setAlerts([]);
+            setRiskLevel('low');
+        }
+    };
 
     // Mock security overview
     const doorStatus = [
@@ -26,9 +64,6 @@ export default function SecurityScreen() {
         { name: 'Camera ban công', online: true },
         { name: 'Camera garage', online: false },
     ];
-
-    const highAlerts = mockSecurityAlerts.filter((a) => a.severity === 'high').length;
-    const riskLevel: 'low' | 'medium' | 'high' = highAlerts >= 2 ? 'high' : highAlerts >= 1 ? 'medium' : 'low';
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
@@ -121,7 +156,7 @@ export default function SecurityScreen() {
                 {/* Alert History */}
                 <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.sm }]}>Lịch sử cảnh báo</Text>
                 <View style={{ gap: Spacing.sm, marginBottom: Spacing.xl }}>
-                    {mockSecurityAlerts.map((alert) => (
+                    {alerts.map((alert) => (
                         <SecurityStatusCard key={alert.id} alert={alert} />
                     ))}
                 </View>

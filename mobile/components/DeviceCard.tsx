@@ -7,12 +7,24 @@ import { Badge } from './ui/Badge';
 import { Spacing } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
 import { Feather } from '@expo/vector-icons';
-import { Device } from '@/services/mockData';
+
+export interface DeviceCardModel {
+    id: string;
+    name: string;
+    type: string;
+    icon?: string;
+    isOnline: boolean;
+    isOn: boolean;
+    brightness?: number;
+    temperature?: number;
+    humidity?: number;
+    battery?: number;
+}
 
 interface DeviceCardProps {
-    device: Device;
+    device: DeviceCardModel;
     onToggle: (id: string, value: boolean) => void;
-    onPress: (device: Device) => void;
+    onPress: (device: DeviceCardModel) => void;
 }
 
 export function DeviceCard({ device, onToggle, onPress }: DeviceCardProps) {

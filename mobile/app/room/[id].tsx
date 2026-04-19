@@ -1,23 +1,73 @@
-import React, { useState } from 'react';
-import { View, Text, FlatList } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, FlatList, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Header } from '@/components/ui/Header';
-import { DeviceCard } from '@/components/DeviceCard';
+import { DeviceCard, DeviceCardModel } from '@/components/DeviceCard';
 import { Card } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
 import { Spacing } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
-import { Feather } from '@expo/vector-icons';
-import { mockRooms, mockDevices, Device } from '@/services/mockData';
+import { devicesAPI, roomsAPI } from '@/services/api';
 
 export default function RoomDetailScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
     const { colors } = useTheme();
     const router = useRouter();
-    const room = mockRooms.find((r) => r.id === id);
-    const [devices, setDevices] = useState<Device[]>(mockDevices[id || '1'] || []);
+    const [room, setRoom] = useState<{
+        id: string;
+        name: string;
+        energyToday: number;
+    } | null>(null);
+    const [devices, setDevices] = useState<DeviceCardModel[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        if (!id) return;
+        loadRoomData(id);
+    }, [id]);
+
+    const loadRoomData = async (roomId: string) => {
+        try {
+            setLoading(true);
+            const roomResponse = await roomsAPI.get(roomId);
+            setRoom({
+                id: roomResponse.id,
+                name: roomResponse.name,
+                energyToday: roomResponse.energy_today,
+            });
+
+            const deviceResponses = await devicesAPI.list(roomId);
+            setDevices(
+                deviceResponses.map((device) => ({
+                    id: device.id,
+                    name: device.name,
+                    type: device.type,
+                    icon: device.type,
+                    isOnline: device.online_status,
+                    isOn: device.status,
+                    brightness: typeof device.metadata?.brightness === 'number' ? device.metadata.brightness : undefined,
+                    temperature: typeof device.metadata?.temperature === 'number' ? device.metadata.temperature : undefined,
+                    humidity: typeof device.metadata?.humidity === 'number' ? device.metadata.humidity : undefined,
+                    battery: typeof device.metadata?.battery === 'number' ? device.metadata.battery : undefined,
+                })),
+            );
+        } catch (error) {
+            console.error('Failed to load room detail:', error);
+            setRoom(null);
+            setDevices([]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (loading) {
+        return (
+            <SafeAreaView style={{ flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' }}>
+                <ActivityIndicator size="large" color={colors.primary} />
+            </SafeAreaView>
+        );
+    }
 
     if (!room) {
         return (
@@ -27,13 +77,22 @@ export default function RoomDetailScreen() {
         );
     }
 
-    const handleToggle = (deviceId: string, value: boolean) => {
+    const handleToggle = async (deviceId: string, value: boolean) => {
         setDevices((prev) =>
             prev.map((d) => (d.id === deviceId ? { ...d, isOn: value } : d)),
         );
+
+        try {
+            await devicesAPI.toggle(deviceId, value);
+        } catch (error) {
+            console.error('Failed to toggle device:', error);
+            setDevices((prev) =>
+                prev.map((d) => (d.id === deviceId ? { ...d, isOn: !value } : d)),
+            );
+        }
     };
 
-    const handleDevicePress = (device: Device) => {
+    const handleDevicePress = (device: DeviceCardModel) => {
         router.push({ pathname: '/device/[id]', params: { id: device.id } });
     };
 
