@@ -19,6 +19,10 @@ set MQTT_STATUS_TOPIC=smarthome/status
 set DEVICE_ID=raspi-01
 set RAIN_PIN=21
 set RAIN_ACTIVE_LOW=1
+set RAIN_SERVO_ENABLED=1
+set RAIN_SERVO_PIN=26
+set RAIN_SERVO_DRY_ANGLE=0
+set RAIN_SERVO_WET_ANGLE=190
 
 3) Run:
 
@@ -67,5 +71,19 @@ python face_client.py
 ## Notes
 
 - Default broker is test.mosquitto.org if env vars are not set.
+- If MQTT connect fails with DNS errors on Raspberry Pi, set `MQTT_BROKER_HOST` to a resolvable hostname or IP and verify the device has working network/DNS.
 - Commands supported: on, off, toggle, status
 - Rain sensor is read from `RAIN_PIN` and published as `rain_detected` in status/sensor payloads.
+- Optional rain servo: when `rain_detected=true`, servo on `RAIN_SERVO_PIN` rotates to `RAIN_SERVO_WET_ANGLE` (default 190); when dry, it returns to `RAIN_SERVO_DRY_ANGLE` (default 0).
+
+## Rain Servo Test
+
+Use this standalone script on the Raspberry Pi to test the rain servo without running the full IoT client.
+
+python3 test_rain_servo.py --wet
+python3 test_rain_servo.py --dry
+
+If you run it without arguments, it defaults to `--dry`.
+
+Default pins:
+- Servo signal: GPIO 26

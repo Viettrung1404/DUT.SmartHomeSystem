@@ -90,6 +90,11 @@ BUZZER_PIN = int(os.getenv("BUZZER_PIN", "16"))
 RAIN_PIN = int(os.getenv("RAIN_PIN", "21"))
 RAIN_ACTIVE_LOW = os.getenv("RAIN_ACTIVE_LOW", "1").strip().lower() in {"1", "true", "yes", "on"}
 RAIN_LOG_INTERVAL_SECONDS = float(os.getenv("RAIN_LOG_INTERVAL_SECONDS", "30"))
+RAIN_SERVO_PIN = int(os.getenv("RAIN_SERVO_PIN", "26"))
+RAIN_SERVO_DRY_ANGLE = float(os.getenv("RAIN_SERVO_DRY_ANGLE", "0"))
+RAIN_SERVO_WET_ANGLE = float(os.getenv("RAIN_SERVO_WET_ANGLE", "190"))
+RAIN_SERVO_HOLD_SECONDS = float(os.getenv("RAIN_SERVO_HOLD_SECONDS", "0.6"))
+RAIN_SERVO_ENABLED = os.getenv("RAIN_SERVO_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"}
 
 FACE_UPLOAD_URL = os.getenv("FACE_UPLOAD_URL", "http://192.168.1.201:8000/face/upload")
 FACE_VERIFY_URL = os.getenv("FACE_VERIFY_URL", "http://192.168.1.201:8000/face/verify")
@@ -141,6 +146,7 @@ door_lock = threading.Lock()
 door_pwm = None
 fan_khach_pwm = None
 fan_ngu_pwm = None
+rain_servo_pwm = None
 last_rain_log_ts = 0.0
 
 
@@ -169,6 +175,8 @@ def init_gpio():
     GPIO.setup(GAS_PIN, GPIO.IN)
     GPIO.setup(RAIN_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP if RAIN_ACTIVE_LOW else GPIO.PUD_DOWN)
     GPIO.setup(BUZZER_PIN, GPIO.OUT)
+    if RAIN_SERVO_ENABLED:
+        GPIO.setup(RAIN_SERVO_PIN, GPIO.OUT)
     GPIO.output(LIGHT_PIN, GPIO.LOW)
     GPIO.output(LIGHT_PIN2, GPIO.LOW)
     GPIO.output(FAN_ENA_PIN, GPIO.LOW)
@@ -181,6 +189,8 @@ def init_gpio():
     GPIO.output(TRIG_PIN, GPIO.LOW)
     GPIO.output(DISTANCE_LIGHT_PIN, GPIO.LOW)
     GPIO.output(BUZZER_PIN, GPIO.LOW)
+    if RAIN_SERVO_ENABLED:
+        GPIO.output(RAIN_SERVO_PIN, GPIO.LOW)
 
 
 def set_output(pin, is_on):
@@ -274,6 +284,9 @@ def read_rain():
     prev_rain_detected = state["rain_detected"]
     state["rain_detected"] = rain_detected
 
+    if rain_detected != prev_rain_detected:
+        set_rain_servo_by_weather(rain_detected)
+
     now = time.monotonic()
     should_log_periodic = (now - last_rain_log_ts) >= RAIN_LOG_INTERVAL_SECONDS
     if rain_detected != prev_rain_detected:
@@ -303,10 +316,24 @@ def set_distance_light_state(is_on):
     set_output(DISTANCE_LIGHT_PIN, is_on)
 
 
-def angle_to_duty(angle):
-    safe_angle = max(0.0, min(180.0, angle))
+def angle_to_duty(angle, max_angle=180.0):
+    safe_max_angle = max(1.0, float(max_angle))
+    safe_angle = max(0.0, min(safe_max_angle, angle))
     span = SERVO_MAX_DUTY - SERVO_MIN_DUTY
-    return SERVO_MIN_DUTY + (safe_angle / 180.0) * span
+    return SERVO_MIN_DUTY + (safe_angle / safe_max_angle) * span
+
+
+def set_rain_servo_by_weather(rain_detected):
+    target_angle = RAIN_SERVO_WET_ANGLE if rain_detected else RAIN_SERVO_DRY_ANGLE
+    if GPIO is None or rain_servo_pwm is None:
+        log("rain_servo: simulation {} deg (rain_detected={})".format(target_angle, rain_detected))
+        return
+
+    duty = angle_to_duty(target_angle, max_angle=190.0)
+    rain_servo_pwm.ChangeDutyCycle(duty)
+    time.sleep(RAIN_SERVO_HOLD_SECONDS)
+    rain_servo_pwm.ChangeDutyCycle(0)
+    log("rain_servo: set {} deg (rain_detected={})".format(target_angle, rain_detected))
 
 
 def set_door_angle(angle, hold_seconds=0.5):
@@ -601,9 +628,13 @@ def build_mqtt_client():
         STATUS_TOPIC,
         SENSOR_TOPIC,
     ))
-    client.connect(BROKER_HOST, BROKER_PORT, keepalive=60)
-    client.loop_start()
-    return client
+    try:
+        client.connect(BROKER_HOST, BROKER_PORT, keepalive=60)
+        client.loop_start()
+        return client
+    except Exception as exc:
+        log("mqtt connect failed: {}. Running without MQTT.".format(exc))
+        return None
 
 
 def _set_picamera2_controls_safe(camera2, controls):
@@ -866,7 +897,7 @@ def face_send_loop():
 
 
 def main():
-    global door_pwm, fan_khach_pwm, fan_ngu_pwm
+    global door_pwm, fan_khach_pwm, fan_ngu_pwm, rain_servo_pwm
     log("iot_client starting")
     init_gpio()
     if GPIO is not None:
@@ -876,11 +907,16 @@ def main():
         fan_khach_pwm.start(0)
         fan_ngu_pwm = GPIO.PWM(FAN_ENB_PIN, FAN_PWM_FREQUENCY)
         fan_ngu_pwm.start(0)
+        if RAIN_SERVO_ENABLED:
+            rain_servo_pwm = GPIO.PWM(RAIN_SERVO_PIN, SERVO_FREQUENCY)
+            rain_servo_pwm.start(0)
         set_fan_device("khach", "off")
         set_fan_device("ngu", "off")
         set_light_device("khach", False)
         set_light_device("ngu", False)
         close_door()
+        if RAIN_SERVO_ENABLED:
+            set_rain_servo_by_weather(False)
 
     client = build_mqtt_client()
 
@@ -906,6 +942,8 @@ def main():
             fan_khach_pwm.stop()
         if fan_ngu_pwm is not None:
             fan_ngu_pwm.stop()
+        if rain_servo_pwm is not None:
+            rain_servo_pwm.stop()
         if door_pwm is not None:
             door_pwm.stop()
         if GPIO is not None:
