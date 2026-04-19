@@ -1,3 +1,15 @@
+"""
+MQTT client for Smart Home system.
+Subscribes to device status updates and energy data from Raspberry Pi.
+Publishes commands to devices.
+
+Topic hierarchy:
+  - device/{device_id}/status  (subscribe) - status updates from Raspberry Pi
+  - device/{device_id}/energy  (subscribe) - energy readings from Raspberry Pi
+  - device/{device_id}/command (publish)   - commands to Raspberry Pi
+  - smarthome/commands         (publish)   - legacy door/face commands
+"""
+
 import time
 import json
 import os
@@ -5,6 +17,8 @@ import ssl
 import threading
 from typing import Optional
 import paho.mqtt.client as mqtt
+from datetime import datetime, timezone
+from uuid import UUID, uuid4
 
 from src.config.env import (
     MQTT_BROKER_HOST,

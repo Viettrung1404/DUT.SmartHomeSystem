@@ -10,6 +10,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 SECRET_KEY = os.getenv("SECRET_KEY", '197b2c37c391bed93fe80344fe73b806947a65e36206e05a1a23c2fa12702fe3')
 ALGORITHM = os.getenv("ALGORITHM", 'HS256')
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
+REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", 7))
 
 # Face recognition
 FACE_GALLERY_DIR = os.getenv("FACE_GALLERY_DIR", "data/face_gallery")
@@ -32,3 +33,10 @@ DEFAULT_HOME_ID = os.getenv("HOME_ID") or os.getenv("DEFAULT_HOME_ID") or "home-
 DEFAULT_DEVICE_ID = os.getenv("DEVICE_ID") or os.getenv("DEFAULT_DEVICE_ID") or "raspi-01"
 
 DOOR_OPEN_COMMAND = os.getenv("DOOR_OPEN_COMMAND", "door open")
+
+# WebSocket
+WS_PING_INTERVAL = int(os.getenv("WS_PING_INTERVAL", 30))
+
+# Backend URL (for mobile app)
+BACKEND_HOST = os.getenv("BACKEND_HOST", "0.0.0.0")
+BACKEND_PORT = int(os.getenv("BACKEND_PORT", "8000"))

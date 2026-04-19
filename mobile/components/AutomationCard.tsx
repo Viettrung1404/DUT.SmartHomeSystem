@@ -1,0 +1,67 @@
+import React from 'react';
+import { View, Text } from 'react-native';
+import { useTheme } from '@/contexts/ThemeContext';
+import { Card } from './ui/Card';
+import { Toggle } from './ui/Toggle';
+import { Spacing } from '@/constants/theme';
+import { Typography } from '@/constants/typography';
+import { Feather } from '@expo/vector-icons';
+import { Automation } from '@/services/mockData';
+
+interface AutomationCardProps {
+    automation: Automation;
+    onToggle: (id: string, value: boolean) => void;
+}
+
+export function AutomationCard({ automation, onToggle }: AutomationCardProps) {
+    const { colors } = useTheme();
+    const iconName = (automation.icon || 'zap') as keyof typeof Feather.glyphMap;
+
+    return (
+        <Card style={{ opacity: automation.isEnabled ? 1 : 0.6 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.md }}>
+                <View
+                    style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 12,
+                        backgroundColor: automation.isEnabled ? colors.primaryLight : colors.surface,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                    }}
+                >
+                    <Feather
+                        name={iconName}
+                        size={20}
+                        color={automation.isEnabled ? colors.primary : colors.iconMuted}
+                    />
+                </View>
+
+                <View style={{ flex: 1 }}>
+                    <Text style={[Typography.bodyMedium, { color: colors.text }]}>{automation.name}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginTop: Spacing.xxs }}>
+                        <Text style={[Typography.caption, { color: colors.primary }]}>NẾU</Text>
+                        <Text style={[Typography.caption, { color: colors.textSecondary }]}>{automation.conditionSummary}</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginTop: 1 }}>
+                        <Text style={[Typography.caption, { color: colors.warning }]}>THÌ</Text>
+                        <Text style={[Typography.caption, { color: colors.textSecondary }]} numberOfLines={1}>
+                            {automation.actionSummary}
+                        </Text>
+                    </View>
+                    {automation.lastRun && (
+                        <Text style={[Typography.caption, { color: colors.textTertiary, marginTop: Spacing.xxs }]}>
+                            Lần cuối: {automation.lastRun}
+                        </Text>
+                    )}
+                </View>
+
+                <Toggle
+                    value={automation.isEnabled}
+                    onToggle={(val) => onToggle(automation.id, val)}
+                    size="sm"
+                />
+            </View>
+        </Card>
+    );
+}
