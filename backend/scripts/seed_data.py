@@ -805,9 +805,23 @@ def generate_sensor_data(session, home, seed_days):
 
 def clear_existing_data(session):
     print("  Xoá data cũ...")
-    for t in ["suggestion_logs","user_patterns","activity_logs","sensor_data",
-              "user_presence","device_states","home_users","devices","rooms","users","homes"]:
-        session.execute(text(f"DELETE FROM {t}"))
+    # Truncate theo thứ tự phụ thuộc để xoá sạch data cũ và reset identity/sequence.
+    tables = [
+        "suggestion_logs",
+        "user_patterns",
+        "activity_logs",
+        "sensor_data",
+        "user_presence",
+        "device_states",
+        "home_users",
+        "devices",
+        "rooms",
+        "users",
+        "homes",
+    ]
+    session.execute(text(
+        f"TRUNCATE TABLE {', '.join(tables)} RESTART IDENTITY CASCADE"
+    ))
     session.flush()
 
 
