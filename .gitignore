@@ -127,3 +127,6 @@ Desktop.ini
 logs/
 *.log
 log.txt
+
+# Dataset imports
+backend/data/dataset/

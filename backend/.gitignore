@@ -154,3 +154,6 @@ logs/
 *.sql
 *.db
 todosapp.db
+
+# Imported datasets
+data/dataset/
