@@ -4,7 +4,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from src.entities.energy_log import EnergyLog
 from src.entities.device import Device
-from src.entities.room import Room
 from src.entities.home_member import HomeMember
 from src.exceptions import ForbiddenError
 from . import models
@@ -19,11 +18,8 @@ def _check_home_access(db: Session, home_id: UUID, user_id: UUID):
 
 
 def _get_home_devices(db: Session, home_id: UUID) -> list[Device]:
-    rooms = db.query(Room).filter(Room.home_id == home_id).all()
-    room_ids = [r.id for r in rooms]
-    if not room_ids:
-        return []
-    return db.query(Device).filter(Device.room_id.in_(room_ids)).all()
+    """Get all devices in a home."""
+    return db.query(Device).filter(Device.home_id == home_id).all()
 
 
 def get_daily_energy(db: Session, home_id: UUID, user_id: UUID) -> models.EnergySummaryResponse:

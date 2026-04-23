@@ -2,7 +2,6 @@ from uuid import UUID, uuid4
 from sqlalchemy.orm import Session
 from src.entities.home import Home
 from src.entities.home_member import HomeMember
-from src.entities.room import Room
 from src.entities.device import Device
 from src.entities.user import User
 from src.exceptions import HomeNotFoundError, ForbiddenError, UserNotFoundError
@@ -57,16 +56,14 @@ def delete_home(db: Session, home_id: UUID, user_id: UUID) -> None:
 
 
 def get_home_stats(db: Session, home: Home) -> models.HomeResponse:
-    rooms = db.query(Room).filter(Room.home_id == home.id).all()
-    room_ids = [r.id for r in rooms]
-    devices = db.query(Device).filter(Device.room_id.in_(room_ids)).all() if room_ids else []
+    devices = db.query(Device).filter(Device.home_id == home.id).all()
     return models.HomeResponse(
         id=str(home.id),
         owner_id=str(home.owner_id),
         name=home.name,
         address=home.address,
         created_at=home.created_at,
-        room_count=len(rooms),
+        room_count=0,
         device_count=len(devices),
         active_devices=sum(1 for d in devices if d.status),
     )

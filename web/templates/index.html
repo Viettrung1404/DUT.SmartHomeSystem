@@ -9,12 +9,31 @@
   <body
     data-backend-url="{{ backend_base_url }}"
     data-home-id="{{ home_id }}"
-    data-device-id="{{ device_id }}"
   >
     <main class="page">
       <header class="header">
-        <h1>Smart Home Control</h1>
-        <p>Send MQTT commands to your device and see the last status.</p>
+        <div class="header-top">
+          <div>
+            <h1>Smart Home Control</h1>
+            <p>Send MQTT commands to your device and see the last status.</p>
+          </div>
+          <div class="user-panel">
+            <p class="user-meta">
+              Signed in as
+              <strong>{{ current_user.full_name or current_user.email }}</strong>
+            </p>
+            {% if active_home %}
+            <p class="user-meta">
+              Home:
+              <strong>{{ active_home.name }}</strong>
+            </p>
+            {% endif %}
+            <a href="/homes/select" class="secondary-link">Switch Home</a>
+            <form method="post" action="/logout">
+              <button type="submit" class="secondary-btn">Logout</button>
+            </form>
+          </div>
+        </div>
       </header>
 
       <section class="card">
@@ -150,6 +169,26 @@
         <h2>Last Face</h2>
         <p id="face-placeholder" class="muted">No image yet</p>
         <img id="face-image" class="face-image" alt="Last face capture" />
+      </section>
+
+      <section class="card">
+        <h2>Face Enrollment (5 Images)</h2>
+        {% if home_missing %}
+        <p class="error-box">No active home found. Please create/join a home before enrolling faces.</p>
+        {% endif %}
+        <form id="face-enroll-form" class="enroll-form">
+          <label for="enroll-home-id">Home ID</label>
+          <input id="enroll-home-id" type="text" value="{{ home_id }}" placeholder="home-001" required />
+
+          <label for="enroll-person-id">Person ID</label>
+          <input id="enroll-person-id" type="text" placeholder="e.g. Tri" required />
+
+          <label for="enroll-images">Select exactly 5 images</label>
+          <input id="enroll-images" type="file" accept="image/*" multiple required />
+
+          <button type="submit">Enroll 5 Images</button>
+        </form>
+        <pre id="enroll-result">Waiting for enrollment...</pre>
       </section>
     </main>
 

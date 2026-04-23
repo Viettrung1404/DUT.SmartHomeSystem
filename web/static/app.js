@@ -6,6 +6,11 @@ async function sendCommand(command) {
       body: JSON.stringify({ command }),
     });
 
+    if (response.status === 401) {
+      window.location.href = "/login";
+      return;
+    }
+
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       alert(data.detail || data.error || "Command failed");
@@ -16,11 +21,92 @@ async function sendCommand(command) {
   }
 }
 
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function enrollFaceBatch(event) {
+  event.preventDefault();
+
+  const resultEl = document.getElementById("enroll-result");
+  const homeInput = document.getElementById("enroll-home-id");
+  const personInput = document.getElementById("enroll-person-id");
+  const imagesInput = document.getElementById("enroll-images");
+
+  const homeId = String(homeInput?.value || "").trim();
+  const personId = String(personInput?.value || "").trim();
+  const files = Array.from(imagesInput?.files || []);
+
+  if (!homeId) {
+    resultEl.textContent = "Error: home_id is required.";
+    return;
+  }
+  if (!personId) {
+    resultEl.textContent = "Error: person_id is required.";
+    return;
+  }
+  if (files.length !== 5) {
+    resultEl.textContent = "Error: Please select exactly 5 images.";
+    return;
+  }
+
+  try {
+    resultEl.textContent = "Uploading and generating vectors...";
+    const imagesBase64 = await Promise.all(files.map((file) => fileToDataUrl(file)));
+
+    const response = await fetch("/api/face/enroll-batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        home_id: homeId,
+        person_id: personId,
+        images_base64: imagesBase64,
+      }),
+    });
+
+    if (response.status === 401) {
+      window.location.href = "/login";
+      return;
+    }
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      resultEl.textContent = `Error: ${data.detail || data.error || `HTTP ${response.status}`}`;
+      return;
+    }
+
+    const lines = [
+      `saved: ${String(data.saved)}`,
+      `home_id: ${data.home_id || homeId}`,
+      `person_id: ${data.person_id || personId}`,
+      `total_images: ${data.total_images ?? 0}`,
+      `saved_images: ${data.saved_images ?? 0}`,
+      `embedded_images: ${data.embedded_images ?? 0}`,
+      `failed_indexes: ${(data.failed_indexes || []).join(", ") || "none"}`,
+      `failures: ${(data.failures || []).join(" | ") || "none"}`,
+      `reason: ${data.reason || "none"}`,
+    ];
+    resultEl.textContent = lines.join("\n");
+    imagesInput.value = "";
+  } catch (err) {
+    resultEl.textContent = `Error: ${err?.message || err}`;
+  }
+}
+
 async function loadStatus() {
   let data = {};
   let loadError = "";
   try {
     const response = await fetch("/api/status");
+    if (response.status === 401) {
+      window.location.href = "/login";
+      return;
+    }
     data = await response.json();
     if (!response.ok) {
       loadError = data.error || data.detail || `HTTP ${response.status}`;
@@ -93,7 +179,6 @@ async function loadStatus() {
       ? "--"
       : String(data.quat_ngu).toUpperCase();
   const lines = [
-    `device_id: ${data.device_id || "unknown"}`,
     `den_khach: ${data.den_khach ?? "unknown"}`,
     `den_ngu: ${data.den_ngu ?? "unknown"}`,
     `quat_khach: ${data.quat_khach ?? "unknown"}`,
@@ -167,7 +252,6 @@ async function loadStatus() {
   const facePlaceholder = document.getElementById("face-placeholder");
   const backendUrl = document.body.dataset.backendUrl;
   const homeId = document.body.dataset.homeId || "";
-  const deviceId = document.body.dataset.deviceId || "";
   if (faceImage && backendUrl) {
     faceImage.onload = () => {
       faceImage.style.display = "block";
@@ -181,10 +265,7 @@ async function loadStatus() {
         facePlaceholder.textContent = "No image yet";
       }
     };
-    const idQuery =
-      homeId && deviceId
-        ? `home_id=${encodeURIComponent(homeId)}&device_id=${encodeURIComponent(deviceId)}&`
-        : "";
+    const idQuery = homeId ? `home_id=${encodeURIComponent(homeId)}&` : "";
     faceImage.src = `${backendUrl}/face/last.jpg?${idQuery}ts=${Date.now()}`;
   }
 }
@@ -195,6 +276,11 @@ document.querySelectorAll("button[data-command]").forEach((button) => {
     await loadStatus();
   });
 });
+
+const faceEnrollForm = document.getElementById("face-enroll-form");
+if (faceEnrollForm) {
+  faceEnrollForm.addEventListener("submit", enrollFaceBatch);
+}
 
 loadStatus();
 setInterval(loadStatus, 3000);

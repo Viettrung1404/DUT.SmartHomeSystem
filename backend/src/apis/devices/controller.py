@@ -9,8 +9,8 @@ router = APIRouter(prefix='/devices', tags=['devices'])
 
 
 @router.get("/", response_model=list[models.DeviceResponse])
-async def list_devices(room_id: UUID, current_user: CurrentUser, db: DbSession):
-    devices = service.get_devices_by_room(db, room_id, current_user.get_uuid())
+async def list_devices(home_id: UUID, current_user: CurrentUser, db: DbSession):
+    devices = service.get_devices_by_home(db, home_id, current_user.get_uuid())
     return [service.to_response(d) for d in devices]
 
 

@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Smart Home System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .navbar {
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+        
+        .navbar h1 {
+            font-size: 1.5rem;
+        }
+        
+        .navbar-right {
+            display: flex;
+            gap: 2rem;
+            align-items: center;
+        }
+        
+        .navbar-right a {
+            color: white;
+            text-decoration: none;
+            transition: opacity 0.3s;
+        }
+
+        .navbar-right .nav-button {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            transition: background 0.3s, transform 0.3s;
+        }
+
+        .navbar-right .nav-button:hover {
+            background: #5568d3;
+            opacity: 1;
+            transform: translateY(-1px);
+        }
+        
+        .navbar-right a:hover {
+            opacity: 0.7;
+        }
+        
+        .navbar-right form {
+            margin: 0;
+        }
+        
+        .navbar-right button {
+            background: #ff6b6b;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        
+        .navbar-right button:hover {
+            background: #ff5252;
+        }
+        
+        .container {
+            flex: 1;
+            max-width: 1200px;
+            width: 100%;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+        
+        h2 {
+            color: white;
+            margin-bottom: 2rem;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 2rem;
+            margin-bottom: 3rem;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            text-align: center;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+        }
+        
+        .stat-card h3 {
+            color: #667eea;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 0.5rem;
+            color: #999;
+        }
+        
+        .stat-card .number {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .actions {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .action-btn {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: 2px solid transparent;
+        }
+        
+        .action-btn:hover {
+            border-color: #667eea;
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+        }
+        
+        .action-btn a {
+            color: #333;
+            text-decoration: none;
+            display: block;
+        }
+        
+        .action-btn h3 {
+            color: #667eea;
+            margin-bottom: 0.5rem;
+        }
+        
+        .action-btn p {
+            color: #999;
+            font-size: 0.9rem;
+        }
+        
+        .user-info {
+            color: white;
+        }
+        
+        .user-info p {
+            margin-bottom: 0.25rem;
+        }
+        
+        .user-name {
+            font-weight: bold;
+        }
+        
+        .admin-badge {
+            display: inline-block;
+            background: #ff6b6b;
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <div class="navbar">
+        <div>
+            <h1>🏠 Admin Dashboard</h1>
+        </div>
+        <div class="navbar-right">
+            <div class="user-info">
+                {% if current_user %}
+                    <p class="user-name">{{ current_user.full_name }} <span class="admin-badge">ADMIN</span></p>
+                    <p style="font-size: 0.9rem;">{{ current_user.email }}</p>
+                {% endif %}
+            </div>
+            <a href="/admin/homes" class="nav-button">Manage Homes</a>
+            <form method="POST" action="/logout" style="display: inline;">
+                <button type="submit">Logout</button>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Main Content -->
+    <div class="container">
+        <h2>Welcome to the Admin Panel</h2>
+        
+        <!-- Statistics -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>Total Homes</h3>
+                <div class="number">{{ stats.total_homes }}</div>
+            </div>
+            <div class="stat-card">
+                <h3>Total Devices</h3>
+                <div class="number">{{ stats.total_devices }}</div>
+            </div>
+            <div class="stat-card">
+                <h3>Active Devices</h3>
+                <div class="number">{{ stats.total_active_devices }}</div>
+            </div>
+        </div>
+        
+        <!-- Quick Actions -->
+        <h2 style="margin-top: 2rem;">Quick Actions</h2>
+        <div class="actions">
+            <div class="action-btn">
+                <a href="/admin/homes">
+                    <h3>🏘️ Manage Homes</h3>
+                    <p>Create, view, and manage all smart homes</p>
+                </a>
+            </div>
+            <div class="action-btn">
+                <a href="/">
+                    <h3>📊 Dashboard</h3>
+                    <p>Back to main dashboard</p>
+                </a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

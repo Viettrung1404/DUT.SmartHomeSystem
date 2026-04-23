@@ -32,6 +32,25 @@ body {
   font-size: clamp(2rem, 4vw, 3rem);
 }
 
+.header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.user-panel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.user-meta {
+  margin: 0;
+  color: #6e6556;
+}
+
 .header p {
   margin: 0 0 24px 0;
   font-size: 1.05rem;
@@ -121,6 +140,128 @@ button {
 button:hover {
   background: var(--accent-dark);
   transform: translateY(-1px);
+}
+
+.secondary-btn {
+  background: #e9e0d2;
+  color: #3b352d;
+}
+
+.secondary-btn:hover {
+  background: #dccfb8;
+}
+
+.secondary-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #e9e0d2;
+  color: #3b352d;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.secondary-link:hover {
+  background: #dccfb8;
+}
+
+.auth-page {
+  display: grid;
+  place-items: center;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 480px;
+}
+
+.auth-form {
+  display: grid;
+  gap: 10px;
+}
+
+.auth-form label {
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.auth-form input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 1rem;
+  background: #fff;
+  color: var(--ink);
+}
+
+.auth-form select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 1rem;
+  background: #fff;
+  color: var(--ink);
+}
+
+.auth-form input:focus {
+  outline: 2px solid #b9d7cf;
+  border-color: var(--accent);
+}
+
+.auth-form select:focus {
+  outline: 2px solid #b9d7cf;
+  border-color: var(--accent);
+}
+
+.auth-switch {
+  margin: 14px 0 0 0;
+}
+
+.auth-switch a {
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.auth-switch a:hover {
+  text-decoration: underline;
+}
+
+.error-box {
+  margin: 10px 0 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #ffe7e0;
+  border: 1px solid #f0c4b8;
+  color: #8a2d1b;
+}
+
+.enroll-form {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.enroll-form label {
+  font-weight: 600;
+}
+
+.enroll-form input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 1rem;
+  background: #fff;
+  color: var(--ink);
+}
+
+.enroll-form input:focus {
+  outline: 2px solid #b9d7cf;
+  border-color: var(--accent);
 }
 
 pre {

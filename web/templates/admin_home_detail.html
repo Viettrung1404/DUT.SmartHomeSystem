@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ home.name }} - Device Management</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .navbar {
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+        
+        .navbar h1 {
+            font-size: 1.5rem;
+        }
+        
+        .navbar-right {
+            display: flex;
+            gap: 2rem;
+            align-items: center;
+        }
+        
+        .navbar-right a {
+            color: white;
+            text-decoration: none;
+            transition: opacity 0.3s;
+        }
+        
+        .navbar-right a:hover {
+            opacity: 0.7;
+        }
+        
+        .navbar-right button {
+            background: #ff6b6b;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        
+        .navbar-right button:hover {
+            background: #ff5252;
+        }
+        
+        .container {
+            flex: 1;
+            max-width: 1200px;
+            width: 100%;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+        
+        .back-link {
+            color: white;
+            text-decoration: none;
+            display: inline-block;
+            margin-bottom: 1.5rem;
+            transition: opacity 0.3s;
+        }
+        
+        .back-link:hover {
+            opacity: 0.7;
+        }
+        
+        h2, h3 {
+            color: white;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+            margin-bottom: 1.5rem;
+        }
+        
+        .home-info {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            margin-bottom: 2rem;
+        }
+        
+        .home-info h2 {
+            color: #333;
+            text-shadow: none;
+            margin-bottom: 0.5rem;
+        }
+        
+        .home-info p {
+            color: #666;
+            margin-bottom: 0.25rem;
+        }
+        
+        .form-container {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            margin-bottom: 2rem;
+        }
+        
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #333;
+            font-weight: 500;
+        }
+        
+        input[type="text"],
+        select {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: inherit;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 1.5rem;
+        }
+        
+        .form-row.full {
+            grid-template-columns: 1fr;
+        }
+        
+        .btn-submit {
+            background: #667eea;
+            color: white;
+            padding: 0.75rem 2rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background 0.3s;
+        }
+        
+        .btn-submit:hover {
+            background: #5568d3;
+        }
+        
+        .alert {
+            background: #ff6b6b;
+            color: white;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 2rem;
+        }
+        
+        .success {
+            background: #51cf66;
+            color: white;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 2rem;
+        }
+        
+        .devices-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1.5rem;
+        }
+        
+        .device-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transition: all 0.3s;
+        }
+        
+        .device-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+        }
+        
+        .device-card h4 {
+            color: #667eea;
+            margin-bottom: 0.5rem;
+        }
+        
+        .device-info {
+            color: #666;
+            font-size: 0.9rem;
+            margin-bottom: 0.25rem;
+        }
+        
+        .device-type {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            margin-top: 0.5rem;
+        }
+        
+        .device-status {
+            display: inline-block;
+            margin-left: 0.5rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+        
+        .online {
+            background: #51cf66;
+            color: white;
+        }
+        
+        .offline {
+            background: #ff8787;
+            color: white;
+        }
+        
+        .empty-state {
+            background: white;
+            padding: 3rem;
+            border-radius: 8px;
+            text-align: center;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <div class="navbar">
+        <div>
+            <h1>🏠 {{ home.name }}</h1>
+        </div>
+        <div class="navbar-right">
+            <a href="/admin/homes">← Back to Homes</a>
+            <form method="POST" action="/logout" style="display: inline;">
+                <button type="submit">Logout</button>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Main Content -->
+    <div class="container">
+        <a href="/admin/homes" class="back-link">← Back to Homes</a>
+        
+        <!-- Home Info -->
+        <div class="home-info">
+            <h2>{{ home.name }}</h2>
+            {% if home.address %}
+                <p>📍 <strong>Address:</strong> {{ home.address }}</p>
+            {% endif %}
+            <p>🆔 <strong>Home ID:</strong> {{ home.id }}</p>
+            <p>👥 <strong>Devices:</strong> {{ devices|length }}</p>
+        </div>
+        
+        <!-- Add Device Form -->
+        <div class="form-container">
+            <h3 style="color: #333; text-shadow: none;">➕ Add New Device</h3>
+            <form id="device-form">
+                <input type="hidden" id="home_id" name="home_id" value="{{ home.id }}">
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="device_name">Device Name *</label>
+                        <input type="text" id="device_name" name="name" required placeholder="e.g., Living Room Light">
+                    </div>
+                    <div class="form-group">
+                        <label for="device_type">Device Type *</label>
+                        <select id="device_type" name="type" required>
+                            <option value="">Select a type...</option>
+                            <option value="light">💡 Light</option>
+                            <option value="fan">🌀 Fan</option>
+                            <option value="ac">❄️ Air Conditioner</option>
+                            <option value="sensor">📡 Sensor</option>
+                            <option value="camera">📹 Camera</option>
+                            <option value="lock">🔒 Smart Lock</option>
+                            <option value="curtain">🪟 Curtain</option>
+                            <option value="switch">🎛️ Switch</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="device_location">Location</label>
+                        <input type="text" id="device_location" name="location" placeholder="e.g., Living Room">
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn-submit">+ Add Device</button>
+            </form>
+            <div id="form-message"></div>
+        </div>
+        
+        <!-- Devices List -->
+        <h3>Devices ({{ devices|length }})</h3>
+        
+        {% if devices %}
+            <div class="devices-grid">
+                {% for device in devices %}
+                    <div class="device-card">
+                        <h4>{{ device.name }}</h4>
+                        <div class="device-info">
+                            <div>📦 {{ device.type|upper }}</div>
+                            {% if device.location %}
+                                <div>📍 {{ device.location }}</div>
+                            {% endif %}
+                            <div>🆔 {{ device.id[:8] }}...</div>
+                        </div>
+                        <div style="margin-top: 0.75rem;">
+                            <span class="device-type">{{ device.type }}</span>
+                            {% if device.online_status %}
+                                <span class="device-status online">● Online</span>
+                            {% else %}
+                                <span class="device-status offline">● Offline</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty-state">
+                <p>No devices added yet. Add your first device above!</p>
+            </div>
+        {% endif %}
+    </div>
+    
+    <script>
+        document.getElementById('device-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = {
+                home_id: document.getElementById('home_id').value,
+                name: document.getElementById('device_name').value,
+                type: document.getElementById('device_type').value,
+                location: document.getElementById('device_location').value || null
+            };
+            
+            const messageDiv = document.getElementById('form-message');
+            
+            try {
+                const response = await fetch('/admin/devices', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(formData)
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    messageDiv.innerHTML = '<div class="success">✓ Device added successfully! Refreshing...</div>';
+                    setTimeout(() => {
+                        location.reload();
+                    }, 1000);
+                } else {
+                    messageDiv.innerHTML = `<div class="alert">❌ Error: ${data.detail}</div>`;
+                }
+            } catch (error) {
+                messageDiv.innerHTML = `<div class="alert">❌ Error: ${error.message}</div>`;
+            }
+        });
+    </script>
+</body>
+</html>

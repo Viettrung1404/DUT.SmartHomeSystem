@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime
+from sqlalchemy import Column, String, DateTime, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import uuid
@@ -14,6 +14,7 @@ class User(Base):
     full_name = Column(String, nullable=False)
     password_hash = Column(String, nullable=False)
     avatar_url = Column(String, nullable=True)
+    is_admin = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     # Relationships
@@ -21,4 +22,4 @@ class User(Base):
     home_memberships = relationship("HomeMember", back_populates="user", lazy="selectin")
 
     def __repr__(self):
-        return f"<User(email='{self.email}', full_name='{self.full_name}')>"
+        return f"<User(email='{self.email}', full_name='{self.full_name}', is_admin={self.is_admin})>"

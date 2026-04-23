@@ -4,22 +4,25 @@ from datetime import datetime
 
 
 class DeviceCreate(BaseModel):
-    room_id: str
+    home_id: str
     name: str
     type: str  # 'light', 'ac', 'sensor', 'camera', 'lock', 'fan', 'curtain'
+    location: Optional[str] = None  # 'phòng khách', 'phòng ngủ', 'bếp', v.v.
     metadata: Optional[dict] = None
 
 
 class DeviceUpdate(BaseModel):
     name: Optional[str] = None
+    location: Optional[str] = None
     metadata: Optional[dict] = None
 
 
 class DeviceResponse(BaseModel):
     id: str
-    room_id: str
+    home_id: str
     name: str
     type: str
+    location: Optional[str] = None
     status: bool
     online_status: bool
     last_seen: Optional[datetime]

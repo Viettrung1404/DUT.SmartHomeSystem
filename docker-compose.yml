@@ -70,6 +70,23 @@ services:
     networks:
       - app-network
 
+  # Web Flask controller
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    ports:
+      - "8001:8001"
+    environment:
+      - WEB_PORT=8001
+      - BACKEND_BASE_URL=http://backend:8000
+    depends_on:
+      - backend
+    volumes:
+      - ./web:/app
+    networks:
+      - app-network
+
 volumes:
   postgres_data:
   grafana_data:

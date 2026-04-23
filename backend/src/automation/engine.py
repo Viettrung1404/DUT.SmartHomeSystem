@@ -29,7 +29,7 @@ def check_time_automations():
 
     from src.entities.automation import Automation, AutomationCondition, AutomationAction
     from src.entities.device import Device
-    from src.mqtt_client import publish_device_command
+    from src.mqtt_client import publish_command
 
     db = _db_session_factory()
     try:
@@ -54,7 +54,13 @@ def check_time_automations():
                         if action.device_id:
                             device = db.query(Device).filter(Device.id == action.device_id).first()
                             if device and device.online_status:
-                                publish_device_command(str(device.id), action.action, action.value)
+                                command = action.action
+                                if action.value is not None and action.action == 'toggle':
+                                    command = 'on' if str(action.value).lower() in {'1', 'true', 'on'} else 'off'
+                                elif action.value is not None and action.action in {'set_brightness', 'set_temperature', 'set_mode'}:
+                                    command = f"{action.action}:{action.value}"
+
+                                publish_command(command, str(device.home_id), str(device.id))
 
                                 # Update device in DB
                                 if action.action == 'toggle':

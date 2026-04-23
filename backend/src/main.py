@@ -5,9 +5,6 @@ from .database.core import engine, Base, SessionLocal
 from .api import register_routes
 from .logging import configure_logging, LogLevels
 from .mqtt_client import get_mqtt_client
-
-from .websocket import ws_manager
-from .mqtt_client import get_mqtt_client, init_mqtt
 from .automation.engine import init_automation_engine, stop_automation_engine
 import logging
 
@@ -15,12 +12,13 @@ import logging
 from .entities.user import User
 from .entities.home import Home
 from .entities.home_member import HomeMember
-from .entities.room import Room
 from .entities.device import Device
 from .entities.device_log import DeviceLog
 from .entities.automation import Automation, AutomationCondition, AutomationAction
 from .entities.energy_log import EnergyLog
 from .entities.security_event import SecurityEvent
+from .entities.device_identity_map import DeviceIdentityMap
+from .entities.device_telemetry import DeviceTelemetry
 
 configure_logging(LogLevels.info)
 
@@ -37,8 +35,7 @@ async def lifespan(app: FastAPI):
         # Avoid blocking API startup in mixed-schema dev environments.
         logging.warning(f"Skipping create_all due to schema mismatch: {e}")
 
-    # Initialize MQTT with DB session factory and WS manager
-    init_mqtt(SessionLocal, ws_manager)
+    # Initialize MQTT lazily so the API can still start when the broker is unavailable.
     try:
         get_mqtt_client()
         logging.info("MQTT client initialized")
@@ -79,8 +76,3 @@ app.add_middleware(
 )
 
 register_routes(app)
-
-
-@app.on_event("startup")
-async def startup_mqtt() -> None:
-	get_mqtt_client()

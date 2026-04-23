@@ -1,10 +1,14 @@
 from typing import Any, Dict, Optional
+import logging
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from ...mqtt_client import publish_command, get_last_status, get_mqtt_debug
-from ...config.env import DEFAULT_HOME_ID, DEFAULT_DEVICE_ID
+from ...mqtt_client import publish_command_home, get_last_status_by_home, get_mqtt_debug
+from ...config.env import DEFAULT_HOME_ID
+
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/iot",
@@ -15,7 +19,6 @@ router = APIRouter(
 class IoTCommandRequest(BaseModel):
     command: str
     home_id: Optional[str] = None
-    device_id: Optional[str] = None
 
 
 class IoTCommandResponse(BaseModel):
@@ -68,11 +71,18 @@ def _segment(value: Optional[str], default: str, field: str) -> str:
 @router.get("/status")
 async def iot_status(
     home_id: Optional[str] = Query(default=None),
-    device_id: Optional[str] = Query(default=None),
 ) -> Dict[str, Any]:
     hid = _segment(home_id, DEFAULT_HOME_ID, "home_id")
-    did = _segment(device_id, DEFAULT_DEVICE_ID, "device_id")
-    return get_last_status(hid, did)
+    logger.debug("iot_status requested", extra={"home_id": hid})
+    status = get_last_status_by_home(hid)
+    logger.debug(
+        "iot_status resolved",
+        extra={
+            "home_id": hid,
+            "timestamp": status.get("timestamp"),
+        },
+    )
+    return status
 
 
 @router.get("/debug")
@@ -104,6 +114,10 @@ async def iot_command(payload: IoTCommandRequest) -> IoTCommandResponse:
         raise HTTPException(status_code=400, detail="Invalid command")
 
     hid = _segment(payload.home_id, DEFAULT_HOME_ID, "home_id")
-    did = _segment(payload.device_id, DEFAULT_DEVICE_ID, "device_id")
-    publish_command(command, hid, did)
+    logger.debug("iot_command requested", extra={"home_id": hid, "command": command})
+    published_topic = publish_command_home(command, hid)
+    logger.debug(
+        "iot_command published",
+        extra={"home_id": hid, "command": command, "topic": published_topic},
+    )
     return IoTCommandResponse(ok=True, command=command)

@@ -25,12 +25,11 @@ MQTT_BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "8883"))
 MQTT_USERNAME = os.getenv("MQTT_USERNAME", "testuser")
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "19122005Tri")
 
-# Topic layout: {prefix}/{home_id}/{device_id}/{commands|status|sensors}
+# Topic layout: {prefix}/{home_id}/{commands|status|sensors}
 MQTT_TOPIC_PREFIX = os.getenv("MQTT_TOPIC_PREFIX", "smarthome").strip().strip("/")
 
-# When API clients omit home_id / device_id, use these (HOME_ID/DEVICE_ID still work in .env)
+# When API clients omit home_id, use this value (HOME_ID still works in .env)
 DEFAULT_HOME_ID = os.getenv("HOME_ID") or os.getenv("DEFAULT_HOME_ID") or "home-001"
-DEFAULT_DEVICE_ID = os.getenv("DEVICE_ID") or os.getenv("DEFAULT_DEVICE_ID") or "raspi-01"
 
 DOOR_OPEN_COMMAND = os.getenv("DOOR_OPEN_COMMAND", "door open")
 

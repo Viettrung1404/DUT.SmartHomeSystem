@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Register | Smart Home</title>
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body>
+    <main class="page auth-page">
+      <section class="card auth-card">
+        <h1>Create Account</h1>
+        <p class="muted">Register to use Smart Home control on the web.</p>
+
+        {% if error %}
+        <div class="error-box">{{ error }}</div>
+        {% endif %}
+
+        <form method="post" class="auth-form">
+          <label for="full_name">Full Name</label>
+          <input
+            id="full_name"
+            name="full_name"
+            type="text"
+            placeholder="Your full name"
+            value="{{ form_data.full_name }}"
+            required
+            autocomplete="name"
+          />
+
+          <label for="email">Email</label>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            placeholder="you@example.com"
+            value="{{ form_data.email }}"
+            required
+            autocomplete="email"
+          />
+
+          <label for="password">Password</label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            placeholder="At least 6 characters"
+            required
+            autocomplete="new-password"
+          />
+
+          <button type="submit">Register</button>
+        </form>
+
+        <p class="auth-switch">
+          Already have an account?
+          <a href="/login">Login</a>
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

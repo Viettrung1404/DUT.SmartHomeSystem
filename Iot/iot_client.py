@@ -50,20 +50,15 @@ BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "8883"))
 MQTT_USERNAME = os.getenv("MQTT_USERNAME", "testuser")
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "19122005Tri")
 
-HOME_ID = os.getenv("HOME_ID", "home-001")
-DEVICE_ID = os.getenv("DEVICE_ID", "raspi-01")
+HOME_ID = os.getenv("HOME_ID") or os.getenv("DEFAULT_HOME_ID") or "home-001"
 
 
-COMMAND_TOPIC = "smarthome/{}/{}/commands".format(HOME_ID, DEVICE_ID)
-STATUS_TOPIC = "smarthome/{}/{}/status".format(HOME_ID, DEVICE_ID)
-SENSOR_TOPIC = "smarthome/{}/{}/sensors".format(HOME_ID, DEVICE_ID)
+COMMAND_TOPIC = "smarthome/{}/commands".format(HOME_ID)
+STATUS_TOPIC = "smarthome/{}/status".format(HOME_ID)
+SENSOR_TOPIC = "smarthome/{}/sensors".format(HOME_ID)
 
 LIGHT_PIN = int(os.getenv("LIGHT_PIN", "20"))
 LIGHT_PIN2 = int(os.getenv("LIGHT_PIN2", "25"))
-
-# Dual-fan driver (L298N/L293D style):
-# - Quat khach: ENA + IN1/IN2
-# - Quat ngu:   ENB + IN3/IN4
 FAN_ENB_PIN = int(os.getenv("FAN_ENB_PIN", "18"))
 FAN_ENA_PIN = int(os.getenv("FAN_ENA_PIN", "12"))
 FAN_IN1_PIN = int(os.getenv("FAN_IN1_PIN", "5"))
@@ -357,7 +352,6 @@ def close_door():
 def publish_status(client):
     log("publish_status")
     payload = {
-        "device_id": DEVICE_ID,
         "den_khach": state["den_khach"],
         "den_ngu": state["den_ngu"],
         "quat_khach": state["quat_khach"],
@@ -380,7 +374,6 @@ def publish_status(client):
 def publish_sensors(client):
     log("publish_sensors")
     payload = {
-        "device_id": DEVICE_ID,
         "distance_cm": state["distance_cm"],
         "distance_alert": state["distance_alert"],
         "distance_light": state["distance_light"],
@@ -611,7 +604,7 @@ def build_mqtt_client():
         log("paho-mqtt not available; MQTT disabled.")
         return None
 
-    client = mqtt.Client(client_id="device-{}".format(DEVICE_ID))
+    client = mqtt.Client(client_id="home-{}".format(HOME_ID))
     if MQTT_USERNAME:
         client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD or None)
 
@@ -855,7 +848,6 @@ def _post_face_image(url, image_bytes):
     image_b64 = base64.b64encode(image_bytes).decode("ascii")
     payload = {
         "home_id": HOME_ID,
-        "device_id": DEVICE_ID,
         "image_base64": image_b64,
     }
     response = requests.post(url, json=payload, timeout=10.0)
@@ -886,7 +878,7 @@ def face_send_loop():
                 verified = bool(result.get("verified")) if isinstance(result, dict) else False
                 log("face_verify: result={}".format(verified))
                 if verified:
-                    # Chỉ mở cửa qua MQTT (backend publish đúng home_id/device_id); không mở cửa cục bộ.
+                    # Chỉ mở cửa qua MQTT (backend publish theo home_id); không mở cửa cục bộ.
                     log("face_verify: match -> expect door command on {}".format(COMMAND_TOPIC))
                     last_verify_ts = now
             else:

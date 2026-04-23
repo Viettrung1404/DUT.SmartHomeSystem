@@ -16,7 +16,8 @@ async def register_user(request: Request, db: DbSession,
         id=str(user.id),
         email=user.email,
         full_name=user.full_name,
-        avatar_url=user.avatar_url
+        avatar_url=user.avatar_url,
+        is_admin=user.is_admin,
     )
 
 
@@ -37,5 +38,6 @@ async def get_me(current_user: service.CurrentUser, db: DbSession):
         id=str(user.id),
         email=user.email,
         full_name=user.full_name,
-        avatar_url=user.avatar_url
+        avatar_url=user.avatar_url,
+        is_admin=user.is_admin,
     )

@@ -14,11 +14,13 @@ class Home(Base):
     name = Column(String, nullable=False)
     address = Column(String, nullable=True)
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     owner = relationship("User", back_populates="owned_homes")
     members = relationship("HomeMember", back_populates="home", cascade="all, delete-orphan")
-    rooms = relationship("Room", back_populates="home", cascade="all, delete-orphan")
+    devices = relationship("Device", back_populates="home", cascade="all, delete-orphan")
     automations = relationship("Automation", back_populates="home", cascade="all, delete-orphan")
     security_events = relationship("SecurityEvent", back_populates="home", cascade="all, delete-orphan")
 

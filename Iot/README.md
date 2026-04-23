@@ -14,9 +14,7 @@ pip install -r requirements.txt
 
 set MQTT_BROKER_HOST=test.mosquitto.org
 set MQTT_BROKER_PORT=1883
-set MQTT_COMMAND_TOPIC=smarthome/commands
-set MQTT_STATUS_TOPIC=smarthome/status
-set DEVICE_ID=raspi-01
+set HOME_ID=home-001
 set RAIN_PIN=21
 set RAIN_ACTIVE_LOW=1
 set RAIN_SERVO_ENABLED=1
@@ -56,7 +54,7 @@ This client detects a face on the Raspberry Pi and sends it to the backend for r
 set FACE_SERVER_URL=http://localhost:8000/face/verify
 set FACE_ENROLL_URL=http://localhost:8000/face/enroll
 set FACE_MODE=verify
-set DEVICE_ID=raspi-01
+set HOME_ID=home-001
 
 2) Run:
 

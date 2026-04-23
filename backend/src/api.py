@@ -1,7 +1,6 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from src.apis.auth.controller import router as auth_router
 from src.apis.homes.controller import router as homes_router
-from src.apis.rooms.controller import router as rooms_router
 from src.apis.devices.controller import router as devices_router
 from src.apis.automations.controller import router as automations_router
 from src.apis.energy.controller import router as energy_router
@@ -16,7 +15,6 @@ def register_routes(app: FastAPI):
     # REST API routes
     app.include_router(auth_router)
     app.include_router(homes_router)
-    app.include_router(rooms_router)
     app.include_router(devices_router)
     app.include_router(automations_router)
     app.include_router(energy_router)
