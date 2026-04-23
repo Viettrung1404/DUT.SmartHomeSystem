@@ -1,11 +1,14 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from src.apis.auth.controller import router as auth_router
+from src.apis.users.controller import admin_router as admin_users_router
+from src.apis.users.controller import router as users_router
 from src.apis.homes.controller import router as homes_router
 from src.apis.rooms.controller import router as rooms_router
 from src.apis.devices.controller import router as devices_router
 from src.apis.automations.controller import router as automations_router
 from src.apis.energy.controller import router as energy_router
 from src.apis.security.controller import router as security_router
+from src.apis.suggestions.controller import router as suggestions_router
 from src.apis.face.controller import router as face_router
 from src.websocket import ws_manager
 
@@ -13,12 +16,15 @@ from src.websocket import ws_manager
 def register_routes(app: FastAPI):
     # REST API routes
     app.include_router(auth_router)
+    app.include_router(users_router)
+    app.include_router(admin_users_router)
     app.include_router(homes_router)
     app.include_router(rooms_router)
     app.include_router(devices_router)
     app.include_router(automations_router)
     app.include_router(energy_router)
     app.include_router(security_router)
+    app.include_router(suggestions_router)
     app.include_router(face_router)
 
     # WebSocket endpoint

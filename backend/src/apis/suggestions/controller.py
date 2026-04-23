@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from src.database.core import get_db
 from src.apis.suggestions.models import SuggestionResponse, SuggestionsListResponse, SuggestionAcceptRequest
 from src.apis.suggestions.service import SuggestionService
-from src.entities.models import SuggestionLog
+from src.entities.suggestion_log import SuggestionLog
 
 router = APIRouter(prefix="/suggestions", tags=["suggestions"])
 

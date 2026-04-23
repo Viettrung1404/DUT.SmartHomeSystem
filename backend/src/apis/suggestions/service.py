@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import text, desc
-from src.entities.models import SuggestionLog
+from src.entities.suggestion_log import SuggestionLog
 from datetime import datetime
 
 

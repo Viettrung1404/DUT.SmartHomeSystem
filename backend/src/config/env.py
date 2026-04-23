@@ -34,3 +34,12 @@ WS_PING_INTERVAL = int(os.getenv("WS_PING_INTERVAL", 30))
 # Backend URL (for mobile app)
 BACKEND_HOST = os.getenv("BACKEND_HOST", "0.0.0.0")
 BACKEND_PORT = int(os.getenv("BACKEND_PORT", "8000"))
+
+# Email / password reset
+SMTP_HOST = os.getenv("SMTP_HOST") or os.getenv("SMTP_SERVER")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USERNAME = os.getenv("SMTP_USERNAME")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL")
+SMTP_STARTTLS = os.getenv("SMTP_STARTTLS", "true").lower() == "true"
+PASSWORD_RESET_BASE_URL = os.getenv("PASSWORD_RESET_BASE_URL", f"http://{BACKEND_HOST}:{BACKEND_PORT}")

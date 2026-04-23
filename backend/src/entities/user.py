@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime
+from sqlalchemy import Column, String, DateTime, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import uuid
@@ -14,6 +14,8 @@ class User(Base):
     full_name = Column(String, nullable=False)
     password_hash = Column(String, nullable=False)
     avatar_url = Column(String, nullable=True)
+    role = Column(String, nullable=False, default="MEMBER")
+    is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     # Relationships
