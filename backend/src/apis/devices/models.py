@@ -35,7 +35,9 @@ class DeviceToggleRequest(BaseModel):
 
 
 class DeviceCommandRequest(BaseModel):
-    command: str  # 'set_brightness', 'set_temperature', 'set_mode', 'lock', 'unlock'
+    # IoT-supported commands: turn_on, turn_off, toggle, set_speed, weak, strong,
+    # open, close, set_angle, set_position, on, off
+    command: str
     value: Optional[Any] = None
 
 

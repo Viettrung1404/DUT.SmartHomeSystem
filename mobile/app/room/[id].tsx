@@ -9,6 +9,45 @@ import { Card } from '@/components/ui/Card';
 import { Spacing } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
 import { devicesAPI, roomsAPI } from '@/services/api';
+import { useWebSocket } from '@/hooks/use-websocket';
+import { Feather } from '@expo/vector-icons';
+
+function getDeviceIcon(type: string): keyof typeof Feather.glyphMap {
+    const iconMap: Record<string, keyof typeof Feather.glyphMap> = {
+        light: 'sun',
+        fan: 'wind',
+        door: 'door-open',
+        buzzer: 'bell',
+        distance_light: 'activity',
+        temperature_humidity: 'thermometer',
+        distance_sensor: 'radio',
+        gas_sensor: 'alert-triangle',
+        rain_sensor: 'cloud-rain',
+        rain_servo: 'droplet',
+    };
+    return iconMap[type] ?? 'circle';
+}
+
+function mapMetadataToDeviceFields(metadata: Record<string, any> | undefined): Partial<DeviceCardModel> {
+    return {
+        brightness: typeof metadata?.brightness === 'number' ? metadata.brightness : undefined,
+        temperature: typeof metadata?.temperature === 'number' ? metadata.temperature : undefined,
+        humidity: typeof metadata?.humidity === 'number' ? metadata.humidity : undefined,
+        battery: typeof metadata?.battery === 'number' ? metadata.battery : undefined,
+        speed: typeof metadata?.speed === 'string' ? metadata.speed : undefined,
+        door: typeof metadata?.door === 'string' ? metadata.door : undefined,
+        distanceCm: typeof metadata?.distance_cm === 'number' ? metadata.distance_cm : undefined,
+        distanceAlert:
+            typeof metadata?.distance_alert === 'boolean' ? metadata.distance_alert : undefined,
+        gasDetected:
+            typeof metadata?.gas_detected === 'boolean' ? metadata.gas_detected : undefined,
+        rainDetected:
+            typeof metadata?.rain_detected === 'boolean' ? metadata.rain_detected : undefined,
+        distanceLight:
+            typeof metadata?.distance_light === 'string' ? metadata.distance_light : undefined,
+        buzzer: typeof metadata?.buzzer === 'string' ? metadata.buzzer : undefined,
+    };
+}
 
 export default function RoomDetailScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
@@ -19,13 +58,36 @@ export default function RoomDetailScreen() {
         name: string;
         energyToday: number;
     } | null>(null);
+    const [homeId, setHomeId] = useState<string | null>(null);
     const [devices, setDevices] = useState<DeviceCardModel[]>([]);
     const [loading, setLoading] = useState(true);
+    const { subscribe } = useWebSocket(homeId);
 
     useEffect(() => {
         if (!id) return;
         loadRoomData(id);
     }, [id]);
+
+    useEffect(() => {
+        if (!homeId) return;
+        const unsubscribe = subscribe('device_update', (message) => {
+            if (!message.device_id) return;
+            setDevices((prev) =>
+                prev.map((device) => {
+                    if (device.id !== message.device_id) return device;
+                    const data = message.data ?? {};
+                    const metadata = data.metadata as Record<string, any> | undefined;
+                    return {
+                        ...device,
+                        isOn: typeof data.status === 'boolean' ? data.status : device.isOn,
+                        isOnline: typeof data.online === 'boolean' ? data.online : device.isOnline,
+                        ...mapMetadataToDeviceFields(metadata),
+                    };
+                }),
+            );
+        });
+        return unsubscribe;
+    }, [homeId, subscribe]);
 
     const loadRoomData = async (roomId: string) => {
         try {
@@ -36,21 +98,22 @@ export default function RoomDetailScreen() {
                 name: roomResponse.name,
                 energyToday: roomResponse.energy_today,
             });
+            setHomeId(roomResponse.home_id);
 
             const deviceResponses = await devicesAPI.list(roomId);
             setDevices(
-                deviceResponses.map((device) => ({
-                    id: device.id,
-                    name: device.name,
-                    type: device.type,
-                    icon: device.type,
-                    isOnline: device.online_status,
-                    isOn: device.status,
-                    brightness: typeof device.metadata?.brightness === 'number' ? device.metadata.brightness : undefined,
-                    temperature: typeof device.metadata?.temperature === 'number' ? device.metadata.temperature : undefined,
-                    humidity: typeof device.metadata?.humidity === 'number' ? device.metadata.humidity : undefined,
-                    battery: typeof device.metadata?.battery === 'number' ? device.metadata.battery : undefined,
-                })),
+                deviceResponses.map((device) => {
+                    const normalizedType = device.type?.toLowerCase?.() ?? device.type;
+                    return {
+                        id: device.id,
+                        name: device.name,
+                        type: normalizedType,
+                        icon: getDeviceIcon(normalizedType),
+                        isOnline: device.online_status,
+                        isOn: device.status,
+                        ...mapMetadataToDeviceFields(device.metadata),
+                    };
+                }),
             );
         } catch (error) {
             console.error('Failed to load room detail:', error);

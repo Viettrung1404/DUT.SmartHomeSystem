@@ -4,7 +4,8 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { API_BASE_URL } from '@/services/api';
+import { API_BASE_URL, getAccessToken } from '@/services/api';
+import { logEvent } from '@/utils/fileLogger';
 
 export type WSEventType = 'device_update' | 'security_alert' | 'automation_triggered';
 
@@ -26,13 +27,15 @@ export function useWebSocket(homeId: string | null) {
         if (!homeId) return;
 
         // Convert http(s) to ws(s)
-        const wsUrl = API_BASE_URL.replace('http', 'ws') + `/ws/home/${homeId}`;
+        const token = getAccessToken();
+        const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
+        const wsUrl = API_BASE_URL.replace('http', 'ws') + `/ws/home/${homeId}${tokenParam}`;
 
         try {
             const socket = new WebSocket(wsUrl);
 
             socket.onopen = () => {
-                console.log('[WS] Connected to', homeId);
+                logEvent(`[WS] Connected home=${homeId}`);
                 setIsConnected(true);
             };
 
@@ -43,25 +46,26 @@ export function useWebSocket(homeId: string | null) {
                     if (callbacks) {
                         callbacks.forEach((cb) => cb(message));
                     }
+                    logEvent(`[WS] Message type=${message.type} device=${message.device_id ?? 'n/a'}`);
                 } catch (e) {
-                    console.warn('[WS] Parse error:', e);
+                    logEvent(`[WS] Parse error ${String(e)}`);
                 }
             };
 
             socket.onclose = () => {
-                console.log('[WS] Disconnected');
+                logEvent('[WS] Disconnected');
                 setIsConnected(false);
                 // Auto-reconnect after 3 seconds
                 reconnectTimer.current = setTimeout(connect, 3000);
             };
 
             socket.onerror = (error) => {
-                console.warn('[WS] Error:', error);
+                logEvent(`[WS] Error ${JSON.stringify(error)}`);
             };
 
             ws.current = socket;
         } catch (e) {
-            console.warn('[WS] Connection failed:', e);
+            logEvent(`[WS] Connection failed ${String(e)}`);
             reconnectTimer.current = setTimeout(connect, 5000);
         }
     }, [homeId]);

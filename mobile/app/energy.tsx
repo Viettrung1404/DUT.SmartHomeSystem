@@ -101,15 +101,19 @@ export default function EnergyScreen() {
                 </Text>
                 <View style={{ gap: Spacing.sm, marginBottom: Spacing.xl }}>
                     {daily.breakdown.map((item, i) => {
-                        const iconName = (item.device_type === 'ac'
-                            ? 'wind'
-                            : item.device_type === 'light'
-                                ? 'sun'
-                                : item.device_type === 'fan'
-                                    ? 'wind'
-                                    : item.device_type === 'sensor'
-                                        ? 'activity'
-                                        : 'cpu') as keyof typeof Feather.glyphMap;
+                        const iconMap: Record<string, keyof typeof Feather.glyphMap> = {
+                            light: 'sun',
+                            fan: 'wind',
+                            door: 'door-open',
+                            buzzer: 'bell',
+                            distance_light: 'activity',
+                            temperature_humidity: 'thermometer',
+                            distance_sensor: 'radio',
+                            gas_sensor: 'alert-triangle',
+                            rain_sensor: 'cloud-rain',
+                            rain_servo: 'droplet',
+                        };
+                        const iconName = iconMap[item.device_type] ?? 'cpu';
                         return (
                             <Card key={i}>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.md }}>

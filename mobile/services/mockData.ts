@@ -32,7 +32,17 @@ export interface Room {
     isOnline: boolean;
 }
 
-export type DeviceType = 'light' | 'ac' | 'camera' | 'lock' | 'sensor' | 'fan' | 'curtain';
+export type DeviceType =
+    | 'light'
+    | 'fan'
+    | 'door'
+    | 'buzzer'
+    | 'distance_light'
+    | 'temperature_humidity'
+    | 'distance_sensor'
+    | 'gas_sensor'
+    | 'rain_sensor'
+    | 'rain_servo';
 
 export interface Device {
     id: string;
@@ -45,11 +55,13 @@ export interface Device {
     // Optional params
     brightness?: number; // 0-100
     temperature?: number; // degrees
-    targetTemp?: number;
-    mode?: string;
-    battery?: number;
     humidity?: number;
-    isLocked?: boolean;
+    speed?: string;
+    door?: string;
+    distanceCm?: number;
+    distanceAlert?: boolean;
+    gasDetected?: boolean;
+    rainDetected?: boolean;
 }
 
 export interface Automation {
@@ -122,38 +134,38 @@ export const mockDevices: Record<string, Device[]> = {
     '1': [
         { id: 'd1', roomId: '1', name: 'Đèn trần', type: 'light', icon: 'sun', isOnline: true, isOn: true, brightness: 80 },
         { id: 'd2', roomId: '1', name: 'Đèn bàn', type: 'light', icon: 'sun', isOnline: true, isOn: true, brightness: 60 },
-        { id: 'd3', roomId: '1', name: 'Máy lạnh', type: 'ac', icon: 'wind', isOnline: true, isOn: true, temperature: 28, targetTemp: 24, mode: 'Cool' },
-        { id: 'd4', roomId: '1', name: 'TV Samsung', type: 'sensor', icon: 'monitor', isOnline: true, isOn: false },
-        { id: 'd5', roomId: '1', name: 'Rèm cửa', type: 'curtain', icon: 'columns', isOnline: true, isOn: false },
-        { id: 'd6', roomId: '1', name: 'Camera', type: 'camera', icon: 'video', isOnline: true, isOn: true },
+        { id: 'd3', roomId: '1', name: 'Cảm biến nhiệt độ', type: 'temperature_humidity', icon: 'thermometer', isOnline: true, isOn: true, temperature: 28, humidity: 60 },
+        { id: 'd4', roomId: '1', name: 'Cảm biến khoảng cách', type: 'distance_sensor', icon: 'radio', isOnline: true, isOn: true, distanceCm: 120 },
+        { id: 'd5', roomId: '1', name: 'Che mưa', type: 'rain_servo', icon: 'droplet', isOnline: true, isOn: false },
+        { id: 'd6', roomId: '1', name: 'Cảm biến mưa', type: 'rain_sensor', icon: 'cloud-rain', isOnline: true, isOn: false, rainDetected: false },
     ],
     '2': [
         { id: 'd7', roomId: '2', name: 'Đèn ngủ', type: 'light', icon: 'moon', isOnline: true, isOn: true, brightness: 30 },
-        { id: 'd8', roomId: '2', name: 'Máy lạnh', type: 'ac', icon: 'wind', isOnline: true, isOn: false, temperature: 26, targetTemp: 22, mode: 'Cool' },
+        { id: 'd8', roomId: '2', name: 'Cảm biến nhiệt độ', type: 'temperature_humidity', icon: 'thermometer', isOnline: true, isOn: true, temperature: 26, humidity: 58 },
         { id: 'd9', roomId: '2', name: 'Quạt trần', type: 'fan', icon: 'loader', isOnline: true, isOn: false },
-        { id: 'd10', roomId: '2', name: 'Cảm biến', type: 'sensor', icon: 'thermometer', isOnline: true, isOn: true, temperature: 27, humidity: 65 },
+        { id: 'd10', roomId: '2', name: 'Cảm biến khoảng cách', type: 'distance_sensor', icon: 'radio', isOnline: true, isOn: true, distanceCm: 90 },
     ],
     '3': [
         { id: 'd11', roomId: '3', name: 'Đèn bếp', type: 'light', icon: 'sun', isOnline: true, isOn: true, brightness: 100 },
         { id: 'd12', roomId: '3', name: 'Máy hút mùi', type: 'fan', icon: 'wind', isOnline: true, isOn: true },
-        { id: 'd13', roomId: '3', name: 'Cảm biến khói', type: 'sensor', icon: 'alert-triangle', isOnline: true, isOn: true },
+        { id: 'd13', roomId: '3', name: 'Cảm biến gas', type: 'gas_sensor', icon: 'alert-triangle', isOnline: true, isOn: true, gasDetected: false },
         { id: 'd14', roomId: '3', name: 'Đèn tủ bếp', type: 'light', icon: 'sun', isOnline: true, isOn: false, brightness: 0 },
-        { id: 'd15', roomId: '3', name: 'Camera', type: 'camera', icon: 'video', isOnline: false, isOn: false },
+        { id: 'd15', roomId: '3', name: 'Cảm biến mưa', type: 'rain_sensor', icon: 'cloud-rain', isOnline: false, isOn: false, rainDetected: false },
     ],
     '4': [
         { id: 'd16', roomId: '4', name: 'Đèn tắm', type: 'light', icon: 'sun', isOnline: true, isOn: false, brightness: 0 },
         { id: 'd17', roomId: '4', name: 'Quạt thông gió', type: 'fan', icon: 'wind', isOnline: true, isOn: false },
-        { id: 'd18', roomId: '4', name: 'Máy nước nóng', type: 'sensor', icon: 'thermometer', isOnline: true, isOn: false },
+        { id: 'd18', roomId: '4', name: 'Cảm biến nhiệt độ', type: 'temperature_humidity', icon: 'thermometer', isOnline: true, isOn: true, temperature: 25, humidity: 70 },
     ],
     '5': [
         { id: 'd19', roomId: '5', name: 'Đèn ban công', type: 'light', icon: 'sun', isOnline: true, isOn: true, brightness: 50 },
-        { id: 'd20', roomId: '5', name: 'Cảm biến thời tiết', type: 'sensor', icon: 'cloud', isOnline: true, isOn: true, temperature: 30, humidity: 70 },
-        { id: 'd21', roomId: '5', name: 'Rèm ban công', type: 'curtain', icon: 'columns', isOnline: true, isOn: false },
+        { id: 'd20', roomId: '5', name: 'Cảm biến nhiệt độ', type: 'temperature_humidity', icon: 'thermometer', isOnline: true, isOn: true, temperature: 30, humidity: 70 },
+        { id: 'd21', roomId: '5', name: 'Che mưa ban công', type: 'rain_servo', icon: 'droplet', isOnline: true, isOn: false },
     ],
     '6': [
         { id: 'd22', roomId: '6', name: 'Đèn garage', type: 'light', icon: 'sun', isOnline: false, isOn: false, brightness: 0 },
-        { id: 'd23', roomId: '6', name: 'Cửa garage', type: 'lock', icon: 'lock', isOnline: false, isOn: false, isLocked: true },
-        { id: 'd24', roomId: '6', name: 'Camera garage', type: 'camera', icon: 'video', isOnline: false, isOn: false },
+        { id: 'd23', roomId: '6', name: 'Cửa garage', type: 'door', icon: 'door-open', isOnline: false, isOn: false, door: 'closed' },
+        { id: 'd24', roomId: '6', name: 'Cảm biến khoảng cách', type: 'distance_sensor', icon: 'radio', isOnline: false, isOn: false, distanceCm: 0 },
     ],
 };
 

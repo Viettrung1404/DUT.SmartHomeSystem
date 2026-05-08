@@ -10,9 +10,11 @@ Topic hierarchy:
   - smarthome/commands         (publish)   - legacy door/face commands
 """
 
+import asyncio
 import time
 import json
 import logging
+import ssl
 import paho.mqtt.client as mqtt
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
@@ -23,11 +25,13 @@ from src.config.env import (
     MQTT_USERNAME,
     MQTT_PASSWORD,
     MQTT_COMMAND_TOPIC,
+    MQTT_USE_TLS,
 )
 
 _mqtt_client: mqtt.Client | None = None
 _db_session_factory = None
 _ws_manager = None
+_event_loop: asyncio.AbstractEventLoop | None = None
 
 
 def init_mqtt(session_factory, ws_manager):
@@ -35,6 +39,11 @@ def init_mqtt(session_factory, ws_manager):
     global _db_session_factory, _ws_manager
     _db_session_factory = session_factory
     _ws_manager = ws_manager
+
+
+def set_event_loop(loop: asyncio.AbstractEventLoop | None) -> None:
+    global _event_loop
+    _event_loop = loop
 
 
 def _on_connect(client, userdata, flags, rc):
@@ -91,9 +100,34 @@ def _handle_device_status(device_id_str: str, payload: dict):
 
             # Update metadata
             metadata = device.metadata_json or {}
-            for key in ['brightness', 'temperature', 'humidity', 'targetTemp', 'mode', 'battery', 'isLocked']:
+            payload_metadata = payload.get("metadata")
+            if isinstance(payload_metadata, dict):
+                for key, value in payload_metadata.items():
+                    metadata[key] = value
+
+            # Backward compatibility for older payloads (flat keys)
+            legacy_keys = [
+                "brightness",
+                "temperature",
+                "humidity",
+                "targetTemp",
+                "mode",
+                "battery",
+                "isLocked",
+                "speed",
+                "door",
+                "buzzer",
+                "distance_light",
+                "distance_cm",
+                "distance_alert",
+                "gas_detected",
+                "rain_detected",
+                "state",
+            ]
+            for key in legacy_keys:
                 if key in payload:
                     metadata[key] = payload[key]
+
             device.metadata_json = metadata
 
             db.commit()
@@ -101,18 +135,15 @@ def _handle_device_status(device_id_str: str, payload: dict):
             # Get home_id for WS broadcast
             room = db.query(Room).filter(Room.id == device.room_id).first()
             if room and _ws_manager:
-                import asyncio
-                try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        asyncio.ensure_future(
-                            _ws_manager.broadcast_device_update(
-                                str(room.home_id), device_id_str,
-                                {"status": device.status, "online": device.online_status, "metadata": metadata}
-                            )
-                        )
-                except RuntimeError:
-                    pass
+                if _event_loop and _event_loop.is_running():
+                    asyncio.run_coroutine_threadsafe(
+                        _ws_manager.broadcast_device_update(
+                            str(room.home_id),
+                            device_id_str,
+                            {"status": device.status, "online": device.online_status, "metadata": metadata},
+                        ),
+                        _event_loop,
+                    )
         finally:
             db.close()
     except Exception as e:
@@ -148,6 +179,10 @@ def get_mqtt_client() -> mqtt.Client:
     if MQTT_USERNAME:
         client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD or None)
 
+    if MQTT_USE_TLS or MQTT_BROKER_PORT == 8883:
+        client.tls_set(cert_reqs=ssl.CERT_REQUIRED)
+        logging.info(f"MQTT TLS enabled for {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}")
+
     client.on_connect = _on_connect
     client.on_message = _on_message
 
@@ -175,4 +210,3 @@ def publish_device_command(device_id: str, command: str, value=None) -> None:
     topic = f"device/{device_id}/command"
     payload = json.dumps({"command": command, "value": value})
     client.publish(topic, payload, qos=1, retain=False)
-    logging.info(f"MQTT published to {topic}: {payload}")

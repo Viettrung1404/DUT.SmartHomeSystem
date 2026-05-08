@@ -26,9 +26,10 @@ const conditions: StepItem[] = [
 
 const actions: StepItem[] = [
     { type: 'toggle', label: 'Bật/Tắt thiết bị', icon: 'power' },
-    { type: 'brightness', label: 'Thay đổi độ sáng', icon: 'sun' },
-    { type: 'temperature', label: 'Đặt nhiệt độ', icon: 'thermometer' },
-    { type: 'lock', label: 'Khóa/Mở khóa', icon: 'lock' },
+    { type: 'set_speed', label: 'Chọn tốc độ quạt', icon: 'wind' },
+    { type: 'open_close', label: 'Mở/Đóng cửa', icon: 'door-open' },
+    { type: 'set_position', label: 'Chọn chế độ che mưa', icon: 'droplet' },
+    { type: 'set_angle', label: 'Đặt góc che mưa', icon: 'sliders' },
     { type: 'notify', label: 'Gửi thông báo', icon: 'bell' },
     { type: 'scene', label: 'Kích hoạt kịch bản', icon: 'play' },
 ];

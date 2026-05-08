@@ -6,9 +6,8 @@ from src.entities.device_log import DeviceLog
 from src.entities.room import Room
 from src.entities.home_member import HomeMember
 from src.exceptions import DeviceNotFoundError, DeviceOfflineError, ForbiddenError, RoomNotFoundError
-from src.mqtt_client import publish_command
+from src.mqtt_client import publish_device_command
 from . import models
-import json
 import logging
 
 
@@ -77,10 +76,15 @@ def toggle_device(db: Session, device_id: UUID, user_id: UUID, data: models.Devi
     db.commit()
     db.refresh(device)
 
-    # Publish MQTT command
+    # Publish MQTT command using explicit device-aware verbs
     try:
-        mqtt_payload = json.dumps({"device_id": str(device_id), "command": "toggle", "value": data.status})
-        publish_command(mqtt_payload)
+        device_type = str(device.type).lower()
+        if device_type in {"lock", "door", "curtain"}:
+            command = "open" if data.status else "close"
+            publish_device_command(str(device_id), command)
+        else:
+            command = "turn_on" if data.status else "turn_off"
+            publish_device_command(str(device_id), command)
     except Exception as e:
         logging.warning(f"MQTT publish failed: {e}")
 
@@ -114,8 +118,7 @@ def send_command(db: Session, device_id: UUID, user_id: UUID, data: models.Devic
 
     # MQTT
     try:
-        mqtt_payload = json.dumps({"device_id": str(device_id), "command": data.command, "value": data.value})
-        publish_command(mqtt_payload)
+        publish_device_command(str(device_id), data.command, data.value)
     except Exception as e:
         logging.warning(f"MQTT publish failed: {e}")
 

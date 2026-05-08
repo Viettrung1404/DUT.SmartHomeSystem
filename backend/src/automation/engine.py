@@ -54,11 +54,28 @@ def check_time_automations():
                         if action.device_id:
                             device = db.query(Device).filter(Device.id == action.device_id).first()
                             if device and device.online_status:
-                                publish_device_command(str(device.id), action.action, action.value)
+                                command = action.action
+                                value = action.value
+                                if command == 'toggle':
+                                    is_on = False
+                                    if isinstance(value, bool):
+                                        is_on = value
+                                    elif isinstance(value, str):
+                                        is_on = value.strip().lower() in {'on', 'true', '1'}
+
+                                    device_type = str(device.type).lower()
+                                    if device_type in {'lock', 'door', 'curtain'}:
+                                        command = 'open' if is_on else 'close'
+                                        value = None
+                                    else:
+                                        command = 'turn_on' if is_on else 'turn_off'
+                                        value = None
+
+                                publish_device_command(str(device.id), command, value)
 
                                 # Update device in DB
                                 if action.action == 'toggle':
-                                    device.status = action.value == 'on' or action.value == 'True'
+                                    device.status = is_on
                                 elif action.action in ('set_brightness', 'set_temperature', 'set_mode'):
                                     metadata = device.metadata_json or {}
                                     key_map = {

@@ -7,8 +7,8 @@ from starlette import status
 from . import models
 from . import service
 from ...rate_limiter import limiter
-from ...mqtt_client import publish_command
-from ...config.env import DOOR_OPEN_COMMAND, FACE_LAST_IMAGE_PATH
+from ...mqtt_client import publish_device_command
+from ...config.env import FACE_LAST_IMAGE_PATH
 
 router = APIRouter(
     prefix="/face",
@@ -21,7 +21,8 @@ router = APIRouter(
 async def verify_face(request: Request, payload: models.FaceVerifyRequest):
     verified, match_id, confidence, reason = service.verify_face_image(payload.image_base64)
     if verified:
-        publish_command(DOOR_OPEN_COMMAND)
+        # Phase A: target the door controller device directly via per-device command topic.
+        publish_device_command(payload.device_id, "open", None)
     return models.FaceVerifyResponse(
         verified=verified,
         match_id=match_id,

@@ -11,7 +11,8 @@ import { Badge } from '@/components/ui/Badge';
 import { Spacing, BorderRadius } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
 import { Feather } from '@expo/vector-icons';
-import { devicesAPI, DeviceResponse } from '@/services/api';
+import { devicesAPI, roomsAPI, DeviceResponse } from '@/services/api';
+import { useWebSocket } from '@/hooks/use-websocket';
 
 interface DeviceViewModel {
     id: string;
@@ -20,30 +21,75 @@ interface DeviceViewModel {
     icon?: string;
     isOnline: boolean;
     isOn: boolean;
-    brightness?: number;
     temperature?: number;
-    targetTemp?: number;
-    mode?: string;
     humidity?: number;
-    battery?: number;
-    isLocked?: boolean;
+    speed?: string;
+    door?: string;
+    distanceCm?: number;
+    distanceAlert?: boolean;
+    gasDetected?: boolean;
+    rainDetected?: boolean;
+    distanceLight?: string;
+    buzzer?: string;
+    rainAngle?: number;
 }
 
+function getDeviceIcon(type: string): keyof typeof Feather.glyphMap {
+    const iconMap: Record<string, keyof typeof Feather.glyphMap> = {
+        light: 'sun',
+        fan: 'wind',
+        door: 'door-open',
+        buzzer: 'bell',
+        distance_light: 'activity',
+        temperature_humidity: 'thermometer',
+        distance_sensor: 'radio',
+        gas_sensor: 'alert-triangle',
+        rain_sensor: 'cloud-rain',
+        rain_servo: 'droplet',
+    };
+    return iconMap[type] ?? 'circle';
+}
+
+function mapMetadataToDeviceFields(metadata: Record<string, any> | undefined): Partial<DeviceViewModel> {
+    return {
+        temperature: typeof metadata?.temperature === 'number' ? metadata.temperature : undefined,
+        humidity: typeof metadata?.humidity === 'number' ? metadata.humidity : undefined,
+        speed: typeof metadata?.speed === 'string' ? metadata.speed : undefined,
+        door: typeof metadata?.door === 'string' ? metadata.door : undefined,
+        distanceCm: typeof metadata?.distance_cm === 'number' ? metadata.distance_cm : undefined,
+        distanceAlert: typeof metadata?.distance_alert === 'boolean'
+            ? metadata.distance_alert
+            : undefined,
+        gasDetected: typeof metadata?.gas_detected === 'boolean' ? metadata.gas_detected : undefined,
+        rainDetected: typeof metadata?.rain_detected === 'boolean' ? metadata.rain_detected : undefined,
+        distanceLight: typeof metadata?.distance_light === 'string'
+            ? metadata.distance_light
+            : undefined,
+        buzzer: typeof metadata?.buzzer === 'string' ? metadata.buzzer : undefined,
+        rainAngle: typeof metadata?.angle === 'number' ? metadata.angle : undefined,
+    };
+}
+
+const readOnlyTypes = new Set([
+    'temperature_humidity',
+    'distance_sensor',
+    'gas_sensor',
+    'rain_sensor',
+    'sensor',
+]);
+
+const noToggleTypes = new Set(['door', 'rain_servo']);
+
 function mapDevice(response: DeviceResponse): DeviceViewModel {
+    const normalizedType = response.type?.toLowerCase?.() ?? response.type;
     return {
         id: response.id,
         name: response.name,
-        type: response.type,
-        icon: response.type,
+        type: normalizedType,
+        icon: getDeviceIcon(normalizedType),
         isOnline: response.online_status,
         isOn: response.status,
-        brightness: typeof response.metadata?.brightness === 'number' ? response.metadata.brightness : undefined,
-        temperature: typeof response.metadata?.temperature === 'number' ? response.metadata.temperature : undefined,
-        targetTemp: typeof response.metadata?.target_temp === 'number' ? response.metadata.target_temp : undefined,
-        mode: typeof response.metadata?.mode === 'string' ? response.metadata.mode : undefined,
-        humidity: typeof response.metadata?.humidity === 'number' ? response.metadata.humidity : undefined,
-        battery: typeof response.metadata?.battery === 'number' ? response.metadata.battery : undefined,
-        isLocked: typeof response.metadata?.is_locked === 'boolean' ? response.metadata.is_locked : undefined,
+        ...mapMetadataToDeviceFields(response.metadata),
     };
 }
 
@@ -51,16 +97,44 @@ export default function DeviceDetailScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
     const { colors } = useTheme();
     const [device, setDevice] = useState<DeviceViewModel | undefined>(undefined);
+    const [homeId, setHomeId] = useState<string | null>(null);
+    const { subscribe } = useWebSocket(homeId);
 
     useEffect(() => {
         if (!id) return;
         loadDevice(id);
     }, [id]);
 
+    useEffect(() => {
+        if (!homeId || !device?.id) return;
+        const deviceId = device.id;
+        const unsubscribe = subscribe('device_update', (message) => {
+            if (message.device_id !== deviceId) return;
+            setDevice((prev) => {
+                if (!prev) return prev;
+                const data = message.data ?? {};
+                const metadata = data.metadata as Record<string, any> | undefined;
+                return {
+                    ...prev,
+                    isOn: typeof data.status === 'boolean' ? data.status : prev.isOn,
+                    isOnline: typeof data.online === 'boolean' ? data.online : prev.isOnline,
+                    ...mapMetadataToDeviceFields(metadata),
+                };
+            });
+        });
+        return unsubscribe;
+    }, [homeId, device?.id, subscribe]);
+
     const loadDevice = async (deviceId: string) => {
         try {
             const response = await devicesAPI.get(deviceId);
             setDevice(mapDevice(response));
+            try {
+                const roomResponse = await roomsAPI.get(response.room_id);
+                setHomeId(roomResponse.home_id);
+            } catch (roomError) {
+                console.warn('Failed to load room for WS:', roomError);
+            }
         } catch (error) {
             console.error('Failed to load device:', error);
             setDevice(undefined);
@@ -79,6 +153,9 @@ export default function DeviceDetailScreen() {
         setDevice((prev) => prev ? { ...prev, ...updates } : prev);
     };
 
+    const isReadOnly = readOnlyTypes.has(device.type);
+    const isToggleAllowed = !isReadOnly && !noToggleTypes.has(device.type);
+
     const toggleDevice = async (value: boolean) => {
         if (!device) return;
         updateDevice({ isOn: value });
@@ -89,6 +166,7 @@ export default function DeviceDetailScreen() {
             updateDevice({ isOn: !value });
         }
     };
+
 
     const sendCommand = async (command: string, value?: unknown) => {
         if (!device) return;
@@ -123,138 +201,225 @@ export default function DeviceDetailScreen() {
                         <Text style={[Typography.bodyMedium, { color: colors.textSecondary }]}>
                             {device.isOn ? 'Đang bật' : 'Đã tắt'}
                         </Text>
-                        <Toggle
-                            value={device.isOn}
-                            onToggle={toggleDevice}
-                            disabled={!device.isOnline}
-                        />
+                        {isToggleAllowed && (
+                            <Toggle
+                                value={device.isOn}
+                                onToggle={toggleDevice}
+                                disabled={!device.isOnline}
+                            />
+                        )}
                     </View>
+                    {isReadOnly && (
+                        <Text style={[Typography.caption, { color: colors.textSecondary, marginTop: Spacing.sm }]}>
+                            Thiết bị chỉ đọc
+                        </Text>
+                    )}
                 </Card>
 
-                {/* Light Controls */}
-                {device.type === 'light' && (
+
+                {/* Fan Controls */}
+                {device.type === 'fan' && (
                     <Card style={{ marginBottom: Spacing.md }}>
-                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Độ sáng</Text>
-                        <Slider
-                            value={device.brightness ?? 0}
-                                onValueChange={(val) => {
-                                    updateDevice({ brightness: val });
-                                    sendCommand('set_brightness', val);
-                                }}
-                            label="Độ sáng"
-                            unit="%"
-                            disabled={!device.isOn || !device.isOnline}
-                        />
-                    </Card>
-                )}
-
-                {/* AC Controls */}
-                {device.type === 'ac' && (
-                    <>
-                        <Card style={{ marginBottom: Spacing.md }}>
-                            <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Nhiệt độ</Text>
-                            <View style={{ alignItems: 'center', marginBottom: Spacing.md }}>
-                                <Text style={[Typography.displayLarge, { color: colors.primary }]}>
-                                    {device.targetTemp ?? 24}°C
-                                </Text>
-                                <Text style={[Typography.caption, { color: colors.textSecondary, marginTop: Spacing.xs }]}>
-                                    Nhiệt độ phòng: {device.temperature ?? '--'}°C
-                                </Text>
-                            </View>
-                            <Slider
-                                value={device.targetTemp ?? 24}
-                                onValueChange={(val) => {
-                                    updateDevice({ targetTemp: val });
-                                    sendCommand('set_temperature', val);
-                                }}
-                                label="Mục tiêu"
-                                unit="°C"
-                                min={16}
-                                max={30}
-                                step={1}
-                                disabled={!device.isOn || !device.isOnline}
-                            />
-                        </Card>
-
-                        <Card style={{ marginBottom: Spacing.md }}>
-                            <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Chế độ</Text>
-                            <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
-                                {['Cool', 'Dry', 'Fan'].map((mode) => (
-                                    <Pressable
-                                        key={mode}
-                                        onPress={() => {
-                                            updateDevice({ mode });
-                                            sendCommand('set_mode', mode);
-                                        }}
-                                        style={{
-                                            flex: 1,
-                                            paddingVertical: Spacing.md,
-                                            borderRadius: BorderRadius.md,
-                                            backgroundColor: device.mode === mode ? colors.primary : colors.surface,
-                                            alignItems: 'center',
-                                            borderWidth: 1,
-                                            borderColor: device.mode === mode ? colors.primary : colors.border,
-                                        }}
+                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Toc do quat</Text>
+                        <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
+                            {[
+                                { label: 'Tat', value: 'off' },
+                                { label: 'Yeu', value: 'weak' },
+                                { label: 'Manh', value: 'strong' },
+                            ].map((option) => (
+                                <Pressable
+                                    key={option.value}
+                                    onPress={() => {
+                                        updateDevice({ speed: option.value, isOn: option.value !== 'off' });
+                                        sendCommand('set_speed', option.value);
+                                    }}
+                                    disabled={!device.isOnline}
+                                    style={{
+                                        flex: 1,
+                                        paddingVertical: Spacing.md,
+                                        borderRadius: BorderRadius.md,
+                                        backgroundColor: device.speed === option.value ? colors.primary : colors.surface,
+                                        alignItems: 'center',
+                                        borderWidth: 1,
+                                        borderColor: device.speed === option.value ? colors.primary : colors.border,
+                                        opacity: device.isOnline ? 1 : 0.6,
+                                    }}
+                                >
+                                    <Feather name="wind" size={20} color={device.speed === option.value ? '#FFFFFF' : colors.icon} />
+                                    <Text
+                                        style={[
+                                            Typography.captionMedium,
+                                            {
+                                                color: device.speed === option.value ? '#FFFFFF' : colors.textSecondary,
+                                                marginTop: Spacing.xs,
+                                            },
+                                        ]}
                                     >
-                                        <Feather
-                                            name={mode === 'Cool' ? 'thermometer' : mode === 'Dry' ? 'droplet' : 'wind'}
-                                            size={20}
-                                            color={device.mode === mode ? '#FFFFFF' : colors.icon}
-                                        />
-                                        <Text
-                                            style={[
-                                                Typography.captionMedium,
-                                                {
-                                                    color: device.mode === mode ? '#FFFFFF' : colors.textSecondary,
-                                                    marginTop: Spacing.xs,
-                                                },
-                                            ]}
-                                        >
-                                            {mode === 'Cool' ? 'Làm lạnh' : mode === 'Dry' ? 'Hút ẩm' : 'Quạt'}
-                                        </Text>
-                                    </Pressable>
-                                ))}
-                            </View>
-                        </Card>
-                    </>
-                )}
-
-                {/* Camera Controls */}
-                {device.type === 'camera' && (
-                    <Card style={{ marginBottom: Spacing.md }}>
-                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Xem trước</Text>
-                        <View
-                            style={{
-                                height: 200, backgroundColor: colors.surface, borderRadius: BorderRadius.md,
-                                alignItems: 'center', justifyContent: 'center',
-                                borderWidth: 1, borderColor: colors.border,
-                            }}
-                        >
-                            {device.isOnline ? (
-                                <>
-                                    <Feather name="play-circle" size={48} color={colors.primary} />
-                                    <Text style={[Typography.body, { color: colors.textSecondary, marginTop: Spacing.sm }]}>
-                                        Nhấn để xem toàn màn hình
+                                        {option.label}
                                     </Text>
-                                </>
-                            ) : (
-                                <>
-                                    <Feather name="video-off" size={48} color={colors.textTertiary} />
-                                    <Text style={[Typography.body, { color: colors.textTertiary, marginTop: Spacing.sm }]}>
-                                        Camera ngoại tuyến
-                                    </Text>
-                                </>
-                            )}
+                                </Pressable>
+                            ))}
                         </View>
                     </Card>
                 )}
 
+                {/* Door Controls */}
+                {device.type === 'door' && (
+                    <Card style={{ marginBottom: Spacing.md }}>
+                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Cua</Text>
+                        <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
+                            {[
+                                { label: 'Mo', value: 'open' },
+                                { label: 'Dong', value: 'close' },
+                            ].map((option) => (
+                                <Pressable
+                                    key={option.value}
+                                    onPress={() => sendCommand(option.value)}
+                                    disabled={!device.isOnline}
+                                    style={{
+                                        flex: 1,
+                                        paddingVertical: Spacing.md,
+                                        borderRadius: BorderRadius.md,
+                                        backgroundColor: colors.surface,
+                                        alignItems: 'center',
+                                        borderWidth: 1,
+                                        borderColor: colors.border,
+                                        opacity: device.isOnline ? 1 : 0.6,
+                                    }}
+                                >
+                                    <Text style={[Typography.captionMedium, { color: colors.textSecondary }]}> {option.label} </Text>
+                                </Pressable>
+                            ))}
+                        </View>
+                    </Card>
+                )}
+
+                {/* Buzzer Controls */}
+                {device.type === 'buzzer' && (
+                    <Card style={{ marginBottom: Spacing.md }}>
+                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Coi</Text>
+                        <Toggle
+                            value={device.isOn}
+                            onToggle={(value) => {
+                                updateDevice({ isOn: value });
+                                sendCommand(value ? 'on' : 'off');
+                            }}
+                            disabled={!device.isOnline}
+                        />
+                    </Card>
+                )}
+
+                {/* Distance Light Controls */}
+                {device.type === 'distance_light' && (
+                    <Card style={{ marginBottom: Spacing.md }}>
+                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Den khoang cach</Text>
+                        <Toggle
+                            value={device.isOn}
+                            onToggle={(value) => {
+                                updateDevice({ isOn: value });
+                                sendCommand(value ? 'on' : 'off');
+                            }}
+                            disabled={!device.isOnline}
+                        />
+                    </Card>
+                )}
+
+                {/* Rain Servo Controls */}
+                {device.type === 'rain_servo' && (
+                    <Card style={{ marginBottom: Spacing.md }}>
+                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Che mua</Text>
+                        <View style={{ flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.md }}>
+                            {[
+                                { label: 'Mua', value: 'wet' },
+                                { label: 'Kho', value: 'dry' },
+                            ].map((option) => (
+                                <Pressable
+                                    key={option.value}
+                                    onPress={() => sendCommand('set_position', option.value)}
+                                    disabled={!device.isOnline}
+                                    style={{
+                                        flex: 1,
+                                        paddingVertical: Spacing.md,
+                                        borderRadius: BorderRadius.md,
+                                        backgroundColor: colors.surface,
+                                        alignItems: 'center',
+                                        borderWidth: 1,
+                                        borderColor: colors.border,
+                                        opacity: device.isOnline ? 1 : 0.6,
+                                    }}
+                                >
+                                    <Text style={[Typography.captionMedium, { color: colors.textSecondary }]}> {option.label} </Text>
+                                </Pressable>
+                            ))}
+                        </View>
+                        <Slider
+                            value={device.rainAngle ?? 0}
+                            onValueChange={(val) => {
+                                updateDevice({ rainAngle: val });
+                                sendCommand('set_angle', val);
+                            }}
+                            label="Goc"
+                            unit="do"
+                            min={0}
+                            max={180}
+                            step={1}
+                            disabled={!device.isOnline}
+                        />
+                    </Card>
+                )}
+
+                {/* Sensor Cards */}
+                {device.type === 'temperature_humidity' && (
+                    <Card style={{ marginBottom: Spacing.md }}>
+                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Nhiet do / Do am</Text>
+                        <Text style={[Typography.body, { color: colors.textSecondary }]}>Nhiet do: {device.temperature ?? '--'}°C</Text>
+                        <Text style={[Typography.body, { color: colors.textSecondary, marginTop: Spacing.xs }]}>Do am: {device.humidity ?? '--'}%</Text>
+                    </Card>
+                )}
+
+                {device.type === 'distance_sensor' && (
+                    <Card style={{ marginBottom: Spacing.md }}>
+                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Sieu am</Text>
+                        <Text style={[Typography.body, { color: colors.textSecondary }]}>Khoang cach: {device.distanceCm ?? '--'}cm</Text>
+                        <Text style={[Typography.body, { color: colors.textSecondary, marginTop: Spacing.xs }]}>
+                            Canh bao: {device.distanceAlert ? 'Co' : 'Khong'}
+                        </Text>
+                    </Card>
+                )}
+
+                {device.type === 'gas_sensor' && (
+                    <Card style={{ marginBottom: Spacing.md }}>
+                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Gas</Text>
+                        <Text style={[Typography.body, { color: colors.textSecondary }]}>Phat hien: {device.gasDetected ? 'Co' : 'Khong'}</Text>
+                    </Card>
+                )}
+
+                {device.type === 'rain_sensor' && (
+                    <Card style={{ marginBottom: Spacing.md }}>
+                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Mua</Text>
+                        <Text style={[Typography.body, { color: colors.textSecondary }]}>Phat hien: {device.rainDetected ? 'Co' : 'Khong'}</Text>
+                    </Card>
+                )}
                 {/* Device Info */}
                 <Card>
-                    <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Thông tin thiết bị</Text>
+                    <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Thong tin thiet bi</Text>
                     {[
-                        { label: 'Loại', value: device.type === 'light' ? 'Đèn' : device.type === 'ac' ? 'Máy lạnh' : device.type === 'camera' ? 'Camera' : device.type === 'fan' ? 'Quạt' : device.type === 'lock' ? 'Khóa' : device.type === 'sensor' ? 'Cảm biến' : 'Rèm' },
-                        { label: 'Trạng thái', value: device.isOnline ? 'Trực tuyến' : 'Ngoại tuyến' },
+                        {
+                            label: 'Loai',
+                            value:
+                                device.type === 'light' ? 'Den'
+                                    : device.type === 'fan' ? 'Quat'
+                                        : device.type === 'door' ? 'Cua'
+                                            : device.type === 'buzzer' ? 'Coi'
+                                                : device.type === 'distance_light' ? 'Den khoang cach'
+                                                    : device.type === 'temperature_humidity' ? 'Nhiet do / Do am'
+                                                        : device.type === 'distance_sensor' ? 'Sieu am'
+                                                            : device.type === 'gas_sensor' ? 'Gas'
+                                                                : device.type === 'rain_sensor' ? 'Mua'
+                                                                    : device.type === 'rain_servo' ? 'Che mua'
+                                                                        : 'Khac',
+                        },
+                        { label: 'Trang thai', value: device.isOnline ? 'Truc tuyen' : 'Ngoai tuyen' },
                         { label: 'ID', value: device.id },
                     ].map((info, i) => (
                         <View
@@ -274,6 +439,6 @@ export default function DeviceDetailScreen() {
 
                 <View style={{ height: Spacing.xl }} />
             </ScrollView>
-        </SafeAreaView>
+        </SafeAreaView >
     );
 }

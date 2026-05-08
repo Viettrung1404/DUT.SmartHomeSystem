@@ -21,10 +21,14 @@ FACE_DET_SIZE = os.getenv("FACE_DET_SIZE", "640,640")
 FACE_LAST_IMAGE_PATH = os.getenv("FACE_LAST_IMAGE_PATH", "data/face_last.jpg")
 
 # MQTT
-MQTT_BROKER_HOST = os.getenv("MQTT_BROKER_HOST", "test.mosquitto.org")
-MQTT_BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "1883"))
-MQTT_USERNAME = os.getenv("MQTT_USERNAME")
-MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
+MQTT_BROKER_HOST = os.getenv(
+	"MQTT_BROKER_HOST",
+	"0d847a93f8b9463487a312fdd241108a.s1.eu.hivemq.cloud"
+)
+MQTT_BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "8883"))
+MQTT_USERNAME = os.getenv("MQTT_USERNAME", "testuser")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "19122005Tri")
+MQTT_USE_TLS = os.getenv("MQTT_USE_TLS", "1").strip().lower() in {"1", "true", "yes", "on"}
 MQTT_COMMAND_TOPIC = os.getenv("MQTT_COMMAND_TOPIC", "smarthome/commands")
 DOOR_OPEN_COMMAND = os.getenv("DOOR_OPEN_COMMAND", "door open")
 

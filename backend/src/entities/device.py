@@ -1,6 +1,7 @@
 from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, JSON
 from sqlalchemy.orm import relationship
+from sqlalchemy.ext.mutable import MutableDict
 import uuid
 from datetime import datetime, timezone
 from ..database.core import Base
@@ -16,7 +17,7 @@ class Device(Base):
     status = Column(Boolean, nullable=False, default=False)  # True = on, False = off
     online_status = Column(Boolean, nullable=False, default=False)
     last_seen = Column(DateTime, nullable=True)
-    metadata_json = Column('metadata', JSON, nullable=True, default=dict)
+    metadata_json = Column('metadata', MutableDict.as_mutable(JSON), nullable=True, default=dict)
     # metadata can store: brightness, temperature, targetTemp, mode, humidity, battery, isLocked, etc.
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 

@@ -1,0 +1,66 @@
+[
+    {
+        "id": "REPLACE_WITH_UUID_LIGHT_LIVING",
+        "kind": "light",
+        "room": "khach",
+        "name": "Living light"
+    },
+    {
+        "id": "REPLACE_WITH_UUID_LIGHT_BEDROOM",
+        "kind": "light",
+        "room": "ngu",
+        "name": "Bedroom light"
+    },
+    {
+        "id": "REPLACE_WITH_UUID_FAN_LIVING",
+        "kind": "fan",
+        "room": "khach",
+        "name": "Living fan"
+    },
+    {
+        "id": "REPLACE_WITH_UUID_FAN_BEDROOM",
+        "kind": "fan",
+        "room": "ngu",
+        "name": "Bedroom fan"
+    },
+    {
+        "id": "REPLACE_WITH_UUID_DOOR",
+        "kind": "door",
+        "name": "Door"
+    },
+    {
+        "id": "REPLACE_WITH_UUID_BUZZER",
+        "kind": "buzzer",
+        "name": "Buzzer"
+    },
+    {
+        "id": "REPLACE_WITH_UUID_DISTANCE_LIGHT",
+        "kind": "distance_light",
+        "name": "Distance light"
+    },
+    {
+        "id": "REPLACE_WITH_UUID_TEMP_HUMIDITY",
+        "kind": "temperature_humidity",
+        "name": "Temp/Humidity"
+    },
+    {
+        "id": "REPLACE_WITH_UUID_DISTANCE_SENSOR",
+        "kind": "distance_sensor",
+        "name": "Ultrasonic sensor"
+    },
+    {
+        "id": "REPLACE_WITH_UUID_GAS_SENSOR",
+        "kind": "gas_sensor",
+        "name": "Gas sensor"
+    },
+    {
+        "id": "REPLACE_WITH_UUID_RAIN_SENSOR",
+        "kind": "rain_sensor",
+        "name": "Rain sensor"
+    },
+    {
+        "id": "REPLACE_WITH_UUID_RAIN_SERVO",
+        "kind": "rain_servo",
+        "name": "Rain servo"
+    }
+]

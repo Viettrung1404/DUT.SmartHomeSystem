@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
@@ -6,7 +7,7 @@ from .database.core import engine, Base, SessionLocal
 from .api import register_routes
 from .logging import configure_logging, LogLevels
 from .websocket import ws_manager
-from .mqtt_client import get_mqtt_client, init_mqtt
+from .mqtt_client import get_mqtt_client, init_mqtt, set_event_loop
 from .automation.engine import init_automation_engine, stop_automation_engine
 import logging
 
@@ -68,6 +69,7 @@ async def lifespan(app: FastAPI):
     logging.info("Database tables created")
 
     # Initialize MQTT with DB session factory and WS manager
+    set_event_loop(asyncio.get_running_loop())
     init_mqtt(SessionLocal, ws_manager)
     try:
         get_mqtt_client()
