@@ -3,6 +3,7 @@ from typing import Optional
 
 
 class FaceVerifyRequest(BaseModel):
+    home_id: str = Field(..., min_length=1)
     device_id: str = Field(..., min_length=1)
     image_base64: str = Field(..., min_length=1)
 
@@ -15,6 +16,7 @@ class FaceVerifyResponse(BaseModel):
 
 
 class FaceEnrollRequest(BaseModel):
+    home_id: str = Field(..., min_length=1)
     device_id: str = Field(..., min_length=1)
     person_id: str = Field(..., min_length=1)
     image_base64: str = Field(..., min_length=1)
@@ -28,6 +30,7 @@ class FaceEnrollResponse(BaseModel):
 
 
 class FaceUploadRequest(BaseModel):
+    home_id: str = Field(..., min_length=1)
     device_id: str = Field(..., min_length=1)
     image_base64: str = Field(..., min_length=1)
 

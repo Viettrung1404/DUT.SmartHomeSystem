@@ -6,6 +6,7 @@ Publishes commands to devices.
 Topic hierarchy:
   - device/{device_id}/status  (subscribe) - status updates from Raspberry Pi
   - device/{device_id}/energy  (subscribe) - energy readings from Raspberry Pi
+    - home/{home_id}/face        (subscribe) - face images from Raspberry Pi
   - device/{device_id}/command (publish)   - commands to Raspberry Pi
   - smarthome/commands         (publish)   - legacy door/face commands
 """
@@ -19,6 +20,7 @@ import paho.mqtt.client as mqtt
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
+from src.apis.face.service import enroll_face, upload_face_image, verify_face_image_for_home
 from src.config.env import (
     MQTT_BROKER_HOST,
     MQTT_BROKER_PORT,
@@ -51,7 +53,8 @@ def _on_connect(client, userdata, flags, rc):
     # Subscribe to all device status and energy topics
     client.subscribe("device/+/status")
     client.subscribe("device/+/energy")
-    logging.info("MQTT subscribed to device/+/status and device/+/energy")
+    client.subscribe("home/+/face")
+    logging.info("MQTT subscribed to device/+/status, device/+/energy and home/+/face")
 
 
 def _on_message(client, userdata, msg):
@@ -67,12 +70,14 @@ def _on_message(client, userdata, msg):
     if len(parts) != 3:
         return
 
-    _, device_id_str, message_type = parts
+    scope, scope_id, message_type = parts
 
     if message_type == 'status':
-        _handle_device_status(device_id_str, payload)
+        _handle_device_status(scope_id, payload)
     elif message_type == 'energy':
-        _handle_energy_data(device_id_str, payload)
+        _handle_energy_data(scope_id, payload)
+    elif message_type == 'face':
+        _handle_face_image(scope_id, payload)
 
 
 def _handle_device_status(device_id_str: str, payload: dict):
@@ -168,6 +173,58 @@ def _handle_energy_data(device_id_str: str, payload: dict):
             db.close()
     except Exception as e:
         logging.error(f"MQTT energy handler error: {e}")
+
+
+def _handle_face_image(home_id: str, payload: dict):
+    """Process face image payload from a device."""
+    if not isinstance(payload, dict):
+        logging.warning("MQTT face handler received non-object payload")
+        return
+
+    image_base64 = payload.get("image_base64")
+    if not image_base64:
+        logging.warning("MQTT face handler missing image_base64 for home %s", home_id)
+        return
+
+    action = str(payload.get("action", "verify")).strip().lower()
+    door_device_id = str(payload.get("door_device_id") or "").strip()
+
+    try:
+        if action == "upload":
+            saved, reason = upload_face_image(home_id, image_base64)
+            logging.info(
+                "MQTT face upload from %s saved=%s reason=%s",
+                home_id,
+                saved,
+                reason,
+            )
+            return
+
+        if action == "enroll":
+            person_id = str(payload.get("person_id") or home_id)
+            saved, image_path, reason = enroll_face(home_id, person_id, image_base64)
+            logging.info(
+                "MQTT face enroll from %s saved=%s image_path=%s reason=%s",
+                home_id,
+                saved,
+                image_path,
+                reason,
+            )
+            return
+
+        verified, match_id, confidence, reason = verify_face_image_for_home(home_id, image_base64)
+        logging.info(
+            "MQTT face verify from %s verified=%s match_id=%s confidence=%s reason=%s",
+            home_id,
+            verified,
+            match_id,
+            confidence,
+            reason,
+        )
+        if verified and door_device_id:
+            publish_device_command(door_device_id, "open", None)
+    except Exception as e:
+        logging.error(f"MQTT face handler error: {e}")
 
 
 def get_mqtt_client() -> mqtt.Client:

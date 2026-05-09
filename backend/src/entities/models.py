@@ -3,9 +3,9 @@
 
 from sqlalchemy import (
     Column, Integer, String, Boolean, ForeignKey,
-    Float, DateTime, Enum, Text, Time, UniqueConstraint
+    Float, DateTime, Enum, Text, Time, UniqueConstraint, JSON
 )
-from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
+from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
@@ -154,7 +154,7 @@ class Device(Base):
     name       = Column(String(100))
     type       = Column(Enum(DeviceType), nullable=False)
     mqtt_topic = Column(String(255), unique=True, nullable=False)
-    config     = Column(JSONB, default={})
+    config     = Column(JSON, default={})
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     room      = relationship("Room", back_populates="devices")
@@ -197,7 +197,7 @@ class DeviceState(Base):
     device_id    = Column(String(50), ForeignKey("devices.id", ondelete="CASCADE"),
                           primary_key=True)
     is_online    = Column(Boolean, default=False)
-    state        = Column(JSONB, default={}, nullable=False)
+    state        = Column(JSON, default={}, nullable=False)
     last_updated = Column(DateTime(timezone=True), server_default=func.now(),
                           onupdate=func.now())
 
@@ -212,7 +212,7 @@ class Schedule(Base):
     name                 = Column(String(100))
     time                 = Column(Time, nullable=False)
     days_of_week         = Column(ARRAY(Integer))
-    action_payload       = Column(JSONB, nullable=False)
+    action_payload       = Column(JSON, nullable=False)
     is_active            = Column(Boolean, default=True)
     source_suggestion_id = Column(Integer, ForeignKey("suggestion_logs.id"), nullable=True)
 
@@ -262,7 +262,7 @@ class ActivityLog(Base):
                               nullable=False, index=True)  # ← THÊM MỚI
     # index=True vì analytics luôn filter theo home_id trước
     description      = Column(Text)
-    metadata_json    = Column("metadata", JSONB)
+    metadata_json    = Column("metadata", JSON)
 
     device = relationship("Device", back_populates="logs")
     user   = relationship("User", back_populates="logs")
@@ -297,7 +297,7 @@ class UserPattern(Base):
     # KMeans train riêng cho từng (user_id, home_id)
     device_id    = Column(String(50), ForeignKey("devices.id"), nullable=True)
     pattern_type = Column(Enum(PatternType), nullable=False)
-    pattern_data = Column(JSONB, nullable=False)
+    pattern_data = Column(JSON, nullable=False)
     confidence   = Column(Float, default=1.0)
     computed_at  = Column(DateTime(timezone=True), server_default=func.now())
     is_active    = Column(Boolean, default=True)
@@ -316,7 +316,7 @@ class SuggestionLog(Base):
     pattern_id      = Column(Integer, ForeignKey("user_patterns.id"), nullable=True)
     action_type     = Column(Enum(ActionType), nullable=False)
     suggestion_text = Column(Text, nullable=False)
-    suggestion_json = Column(JSONB)
+    suggestion_json = Column(JSON)
     was_accepted    = Column(Boolean, nullable=True)
     created_at      = Column(DateTime(timezone=True), server_default=func.now())
 
