@@ -63,6 +63,11 @@ class ActionType(str, enum.Enum):
     ALERT      = "ALERT"
     AUTOMATION = "AUTOMATION"
 
+class SuggestionFeedbackType(str, enum.Enum):
+    ACCEPT = "ACCEPT"
+    REJECT = "REJECT"
+    IGNORE = "IGNORE"
+
 
 # ═══════════════════════════════════════════════════════════════════
 # HOME — Bảng mới thêm
@@ -322,3 +327,39 @@ class SuggestionLog(Base):
 
     user    = relationship("User", back_populates="suggestions")
     pattern = relationship("UserPattern", back_populates="suggestions")
+    feedback = relationship("SuggestionFeedbackLog", back_populates="suggestion",
+                            cascade="all, delete-orphan", uselist=False)
+
+
+class SuggestionFeedbackLog(Base):
+    __tablename__ = "suggestion_feedback_logs"
+
+    id             = Column(Integer, primary_key=True, index=True)
+    suggestion_id  = Column(Integer, ForeignKey("suggestion_logs.id", ondelete="CASCADE"), nullable=False, unique=True)
+    user_id        = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    feedback_type   = Column(Enum(SuggestionFeedbackType), nullable=False)
+    feedback_reason = Column(Text, nullable=True)
+    feedback_time   = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at      = Column(DateTime(timezone=True), server_default=func.now())
+
+    suggestion = relationship("SuggestionLog", back_populates="feedback")
+    user       = relationship("User")
+
+
+class SuggestionDecisionLog(Base):
+    __tablename__ = "suggestion_decision_logs"
+
+    id                 = Column(Integer, primary_key=True, index=True)
+    pattern_id         = Column(Integer, ForeignKey("user_patterns.id", ondelete="CASCADE"), nullable=False)
+    home_id            = Column(UUID(as_uuid=True), ForeignKey("homes.id", ondelete="CASCADE"), nullable=False)
+    user_id            = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    decision_score     = Column(Float, nullable=False)
+    should_suggest     = Column(Boolean, nullable=False)
+    blocked_by         = Column(String(50), nullable=True)  # e.g., "COOLDOWN", "LOW_SCORE", "USELESS"
+    cooldown_signature = Column(String(255), nullable=True)
+    metadata_json      = Column(JSONB, nullable=True)
+    created_at         = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    pattern = relationship("UserPattern")
+    home    = relationship("Home")
+    user    = relationship("User")

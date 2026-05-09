@@ -10,6 +10,7 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+from sqlalchemy import inspect
 
 
 # revision identifiers, used by Alembic.
@@ -21,17 +22,20 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Create suggestion_logs table."""
-    
+    bind = op.get_bind()
+    if inspect(bind).has_table('suggestion_logs'):
+        return
+
     # Tạo ENUM cho ActionType nếu chưa có
-    action_type_enum = postgresql.ENUM('SCHEDULE', 'ALERT', 'AUTOMATION', 
-                                       name='actiontype', create_type=True)
-    action_type_enum.create(op.get_bind(), checkfirst=True)
-    
+    action_type_enum = postgresql.ENUM('SCHEDULE', 'ALERT', 'AUTOMATION', name='actiontype', create_type=True)
+    action_type_enum.create(bind, checkfirst=True)
+    action_type_column = postgresql.ENUM('SCHEDULE', 'ALERT', 'AUTOMATION', name='actiontype', create_type=False)
+
     op.create_table('suggestion_logs',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('user_id', sa.UUID(), nullable=False),
         sa.Column('pattern_id', sa.Integer(), nullable=True),
-        sa.Column('action_type', action_type_enum, nullable=False),
+        sa.Column('action_type', action_type_column, nullable=False),
         sa.Column('suggestion_text', sa.Text(), nullable=False),
         sa.Column('suggestion_json', postgresql.JSONB(), nullable=True),
         sa.Column('was_accepted', sa.Boolean(), nullable=True),
