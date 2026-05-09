@@ -1,5 +1,5 @@
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, JSON
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 
 from ..database.core import Base
@@ -15,6 +15,6 @@ class SuggestionLog(Base):
     pattern_id = Column(Integer, nullable=True)
     action_type = Column(String, nullable=False)
     suggestion_text = Column(Text, nullable=False)
-    suggestion_json = Column(JSONB, nullable=True)
+    suggestion_json = Column(JSON, nullable=True)
     was_accepted = Column(Boolean, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

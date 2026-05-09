@@ -7,8 +7,6 @@ import ssl
 import threading
 import time
 
-import requests
-
 
 def _load_env_file(path):
     if not path or not os.path.exists(path):
@@ -244,6 +242,14 @@ def build_device_command_topic(device_id):
 
 def build_device_status_topic(device_id):
     return "device/{}/status".format(device_id)
+
+
+def build_device_face_topic(device_id):
+    return "device/{}/face".format(device_id)
+
+
+def build_home_face_topic(home_id):
+    return "home/{}/face".format(home_id)
 
 
 def _normalize_fan_speed(value):
@@ -1338,23 +1344,39 @@ def face_capture_loop():
         time.sleep(DETECT_INTERVAL)
 
 
-def _post_face_image(url, image_bytes):
+def publish_face_image(client, action, image_bytes, person_id=None):
+    if client is None:
+        log("face_mqtt: MQTT client unavailable")
+        return False
+
+    door_device_id = get_door_device_id()
     image_b64 = base64.b64encode(image_bytes).decode("ascii")
     payload = {
-        "device_id": get_door_device_id(),
+        "home_id": HOME_ID,
+        "door_device_id": door_device_id,
+        "action": action,
         "image_base64": image_b64,
     }
-    response = requests.post(url, json=payload, timeout=10.0)
-    response.raise_for_status()
-    try:
-        return response.json()
-    except ValueError:
-        return None
+    if person_id:
+        payload["person_id"] = person_id
+
+    topic = build_home_face_topic(HOME_ID)
+    info = client.publish(topic, json.dumps(payload), qos=1, retain=False)
+    if mqtt is not None and info.rc != mqtt.MQTT_ERR_SUCCESS:
+        log("face_mqtt: publish failed rc={}".format(info.rc))
+        return False
+
+    log("face_mqtt: published action={} topic={}".format(action, topic))
+    return True
 
 
-def face_send_loop():
+def face_send_loop(client):
     global last_verify_ts
     log("face_send_loop start mode={}".format(FACE_MODE))
+    if client is None:
+        log("face_send_loop: MQTT unavailable; face upload disabled.")
+        return
+
     while not stop_event.is_set():
         try:
             image_bytes = face_queue.get(timeout=0.5)
@@ -1367,21 +1389,17 @@ def face_send_loop():
                 if now - last_verify_ts < FACE_VERIFY_COOLDOWN:
                     log("face_verify: cooldown")
                     continue
-                log("face_verify: sending to server")
-                result = _post_face_image(FACE_VERIFY_URL, image_bytes)
-                verified = bool(result.get("verified")) if isinstance(result, dict) else False
-                log("face_verify: result={}".format(verified))
-                if verified:
-                    # Ch? m? c?a qua MQTT (backend publish theo home_id); không m? c?a c?c b?.
+                log("face_verify: publishing to mqtt")
+                if publish_face_image(client, "verify", image_bytes):
+                    last_verify_ts = now
                     log(
-                        "face_verify: match -> expect door command on {}".format(
+                        "face_verify: published -> expect door command on {}".format(
                             build_device_command_topic(get_door_device_id())
                         )
                     )
-                    last_verify_ts = now
             else:
-                log("face_upload: sending to server")
-                _post_face_image(FACE_UPLOAD_URL, image_bytes)
+                log("face_upload: publishing to mqtt")
+                publish_face_image(client, "upload", image_bytes)
         except Exception as exc:
             log("Face send error: {}".format(exc))
 
@@ -1413,7 +1431,7 @@ def main():
     threads = [
         threading.Thread(target=device_loop, args=(client,), daemon=True),
         threading.Thread(target=face_capture_loop, daemon=True),
-        threading.Thread(target=face_send_loop, daemon=True),
+        threading.Thread(target=face_send_loop, args=(client,), daemon=True),
     ]
 
     for thread in threads:
