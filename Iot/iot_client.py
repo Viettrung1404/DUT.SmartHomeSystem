@@ -1522,21 +1522,21 @@ def publish_face_image(client, action, image_bytes, person_id=None):
         "action": action,
         "image_base64": image_b64,
     }
-    if person_id:
-        payload["person_id"] = person_id
-    topic = build_home_face_topic(HOME_ID)
-    info = client.publish(topic, json.dumps(payload), qos=1, retain=False)
-    if mqtt is not None and info.rc != mqtt.MQTT_ERR_SUCCESS:
-        log("face_mqtt: publish failed rc={}".format(info.rc))
-        return False
-
-    log("face_mqtt: published action={} topic={}".format(action, topic))
-    return True
+    response = requests.post(url, json=payload, timeout=10.0)
+    response.raise_for_status()
+    try:
+        return response.json()
+    except ValueError:
+        return None
 
 
 def face_send_loop(client):
     global last_verify_ts
     log("face_send_loop start mode={}".format(FACE_MODE))
+    if client is None:
+        log("face_send_loop: MQTT unavailable; face upload disabled.")
+        return
+
     if client is None:
         log("face_send_loop: MQTT unavailable; face upload disabled.")
         return
@@ -1553,11 +1553,16 @@ def face_send_loop(client):
                 if now - last_verify_ts < FACE_VERIFY_COOLDOWN:
                     log("face_verify: cooldown")
                     continue
+                log("face_verify: publishing to mqtt")
+                if publish_face_image(client, "verify", image_bytes):
+                    last_verify_ts = now
                 log("face_verify: publishing to mqtt for verification")
                 if publish_face_image(client, "verify", image_bytes):
                     last_verify_ts = now
                     log(
-                        "face_verify: Face image sent to backend. Waiting for verification result and automatic door unlock..."
+                        "face_verify: published -> expect door command on {}".format(
+                            build_device_command_topic(get_door_device_id())
+                        )
                     )
             else:
                 log("face_upload: publishing to mqtt")
