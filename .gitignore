@@ -12,6 +12,7 @@ venv/
 env/
 ENV/
 .venv
+.venv311
 
 # Python distribution / packaging
 .Python

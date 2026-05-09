@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 from typing import List, Tuple
 
 try:
@@ -31,10 +32,58 @@ def _get_face_app() -> FaceAnalysis:
     det_size_parts = [int(part) for part in FACE_DET_SIZE.split(",") if part.strip().isdigit()]
     det_size = (det_size_parts[0], det_size_parts[1]) if len(det_size_parts) == 2 else (640, 640)
 
-    app = FaceAnalysis(name=FACE_MODEL_NAME, providers=providers)
+    try:
+        app = FaceAnalysis(name=FACE_MODEL_NAME, providers=providers)
+    except TypeError:
+        # insightface<=0.2.x does not accept the providers argument and has stricter model routing.
+        app = FaceAnalysis(name=_build_legacy_model_name(FACE_MODEL_NAME))
     app.prepare(ctx_id=0, det_size=det_size)
     _face_app = app
     return app
+
+
+def _build_legacy_model_name(model_name: str) -> str:
+    model_root = os.path.expanduser("~/.insightface/models")
+    source_dir = os.path.join(model_root, model_name)
+    if not os.path.isdir(source_dir):
+        return model_name
+
+    legacy_model_name = "{}_legacy".format(model_name)
+    legacy_dir = os.path.join(model_root, legacy_model_name)
+    os.makedirs(legacy_dir, exist_ok=True)
+
+    copied = 0
+    has_detection = False
+    has_recognition = False
+
+    try:
+        from insightface.model_zoo import get_model
+    except Exception:
+        return model_name
+
+    for file_name in sorted(os.listdir(source_dir)):
+        if not file_name.lower().endswith(".onnx"):
+            continue
+        source_file = os.path.join(source_dir, file_name)
+        try:
+            model = get_model(source_file)
+        except Exception:
+            continue
+
+        task_name = str(getattr(model, "taskname", "")).lower()
+        if task_name not in {"detection", "recognition"}:
+            continue
+
+        shutil.copy2(source_file, os.path.join(legacy_dir, file_name))
+        copied += 1
+        if task_name == "detection":
+            has_detection = True
+        if task_name == "recognition":
+            has_recognition = True
+
+    if copied > 0 and has_detection and has_recognition:
+        return legacy_model_name
+    return model_name
 
 
 def _load_image_bytes(image_bytes: bytes):
@@ -95,6 +144,20 @@ def _load_gallery_embeddings(gallery_dir: str) -> Tuple[List[str], List[np.ndarr
 
     for root, _, files in os.walk(gallery_dir):
         for filename in files:
+            if filename.lower().endswith(".npy"):
+                file_path = os.path.join(root, filename)
+                embedding = _load_embedding_from_file(file_path)
+                if embedding is None:
+                    continue
+
+                person_id = os.path.basename(root)
+                if os.path.abspath(root) == os.path.abspath(gallery_dir):
+                    person_id = os.path.splitext(filename)[0]
+
+                match_ids.append(person_id)
+                embeddings.append(embedding)
+                continue
+
             if not filename.lower().endswith((".jpg", ".jpeg", ".png")):
                 continue
             person_id = os.path.basename(root)
