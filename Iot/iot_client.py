@@ -135,6 +135,11 @@ BUTTON_LIGHT_BEDROOM_PIN = int(os.getenv("BUTTON_LIGHT_BEDROOM_PIN", "3"))
 BUTTON_FAN_BEDROOM_PIN = int(os.getenv("BUTTON_FAN_BEDROOM_PIN", "2"))
 BUTTON_ACTIVE_LOW = os.getenv("BUTTON_ACTIVE_LOW", "1").strip().lower() in {"1", "true", "yes", "on"}
 BUTTON_DEBOUNCE_SECONDS = float(os.getenv("BUTTON_DEBOUNCE_SECONDS", "0.2"))
+BUTTON_POLL_INTERVAL_SECONDS = float(os.getenv("BUTTON_POLL_INTERVAL_SECONDS", "0.05"))
+LIGHT_RELAY_ACTIVE_LOW = os.getenv("LIGHT_RELAY_ACTIVE_LOW", "1").strip().lower() in {"1", "true", "yes", "on"}
+LIGHT2_RELAY_ACTIVE_LOW = os.getenv("LIGHT2_RELAY_ACTIVE_LOW", "1").strip().lower() in {"1", "true", "yes", "on"}
+DISTANCE_LIGHT_ACTIVE_LOW = os.getenv("DISTANCE_LIGHT_ACTIVE_LOW", "0").strip().lower() in {"1", "true", "yes", "on"}
+BUZZER_ACTIVE_LOW = os.getenv("BUZZER_ACTIVE_LOW", "0").strip().lower() in {"1", "true", "yes", "on"}
 
 FACE_UPLOAD_URL = os.getenv("FACE_UPLOAD_URL", "http://192.168.1.201:8000/face/upload")
 FACE_VERIFY_URL = os.getenv("FACE_VERIFY_URL", "http://192.168.1.201:8000/face/verify")
@@ -427,6 +432,25 @@ def log(message):
     print("[IOT] {}".format(message))
 
 
+def _is_output_active_low(pin):
+    if pin == LIGHT_PIN:
+        return LIGHT_RELAY_ACTIVE_LOW
+    if pin == LIGHT_PIN2:
+        return LIGHT2_RELAY_ACTIVE_LOW
+    if pin == DISTANCE_LIGHT_PIN:
+        return DISTANCE_LIGHT_ACTIVE_LOW
+    if pin == BUZZER_PIN:
+        return BUZZER_ACTIVE_LOW
+    return False
+
+
+def _output_level_for_state(pin, is_on):
+    active_low = _is_output_active_low(pin)
+    if is_on:
+        return GPIO.LOW if active_low else GPIO.HIGH
+    return GPIO.HIGH if active_low else GPIO.LOW
+
+
 def init_gpio():
     if GPIO is None:
         log("RPi.GPIO not available; running in simulation mode.")
@@ -470,8 +494,8 @@ def init_gpio():
     )
     if RAIN_SERVO_ENABLED:
         GPIO.setup(RAIN_SERVO_PIN, GPIO.OUT)
-    GPIO.output(LIGHT_PIN, GPIO.LOW)
-    GPIO.output(LIGHT_PIN2, GPIO.LOW)
+    GPIO.output(LIGHT_PIN, _output_level_for_state(LIGHT_PIN, False))
+    GPIO.output(LIGHT_PIN2, _output_level_for_state(LIGHT_PIN2, False))
     GPIO.output(FAN_ENA_PIN, GPIO.LOW)
     GPIO.output(FAN_ENB_PIN, GPIO.LOW)
     GPIO.output(FAN_IN1_PIN, GPIO.LOW)
@@ -480,8 +504,8 @@ def init_gpio():
     GPIO.output(FAN_IN4_PIN, GPIO.LOW)
     GPIO.output(DOOR_PIN, GPIO.LOW)
     GPIO.output(TRIG_PIN, GPIO.LOW)
-    GPIO.output(DISTANCE_LIGHT_PIN, GPIO.LOW)
-    GPIO.output(BUZZER_PIN, GPIO.LOW)
+    GPIO.output(DISTANCE_LIGHT_PIN, _output_level_for_state(DISTANCE_LIGHT_PIN, False))
+    GPIO.output(BUZZER_PIN, _output_level_for_state(BUZZER_PIN, False))
     if RAIN_SERVO_ENABLED:
         GPIO.output(RAIN_SERVO_PIN, GPIO.LOW)
 
@@ -506,7 +530,7 @@ def init_gpio():
 def set_output(pin, is_on):
     if GPIO is None:
         return
-    GPIO.output(pin, GPIO.HIGH if is_on else GPIO.LOW)
+    GPIO.output(pin, _output_level_for_state(pin, is_on))
 
 
 def _fan_pwm_for(room):
@@ -627,9 +651,10 @@ def _button_pressed(value):
 
 def read_buttons():
     if GPIO is None:
-        return
+        return False
 
     now = time.monotonic()
+    changed = False
     readings = {
         "light_living": GPIO.input(BUTTON_LIGHT_LIVING_PIN),
         "fan_living": GPIO.input(BUTTON_FAN_LIVING_PIN),
@@ -652,15 +677,21 @@ def read_buttons():
         if name == "light_living":
             log("@@@@ button GPIO {} pressed: den khach @@@@".format(BUTTON_LIGHT_LIVING_PIN))
             set_light_device("khach", state["den_khach"] != "on")
+            changed = True
         elif name == "fan_living":
             log("@@@@ button GPIO {} pressed: quat khach @@@@".format(BUTTON_FAN_LIVING_PIN))
             set_fan_device("khach", "off" if state["quat_khach"] != "off" else "strong")
+            changed = True
         elif name == "light_bedroom":
             log("@@@@ button GPIO {} pressed: den ngu @@@@".format(BUTTON_LIGHT_BEDROOM_PIN))
             set_light_device("ngu", state["den_ngu"] != "on")
+            changed = True
         elif name == "fan_bedroom":
             log("@@@@ button GPIO {} pressed: quat ngu @@@@".format(BUTTON_FAN_BEDROOM_PIN))
             set_fan_device("ngu", "off" if state["quat_ngu"] != "off" else "strong")
+            changed = True
+
+    return changed
 
 
 def set_distance_light_state(is_on):
@@ -1252,19 +1283,28 @@ def enhance_face_image(img):
 
 
 def device_loop(client):
+    next_sensor_ts = 0.0
     while not stop_event.is_set():
-        log("device_loop tick")
-        read_buttons()
-        read_dht()
-        read_distance()
-        read_gas()
-        read_rain()
-
-        if client is not None:
+        button_changed = read_buttons()
+        if button_changed and client is not None:
             publish_device_statuses(client)
             publish_status(client)
-            publish_sensors(client)
-        time.sleep(DEVICE_LOOP_INTERVAL)
+
+        now = time.monotonic()
+        if now >= next_sensor_ts:
+            log("device_loop tick")
+            read_dht()
+            read_distance()
+            read_gas()
+            read_rain()
+
+            if client is not None:
+                publish_device_statuses(client)
+                publish_status(client)
+                publish_sensors(client)
+            next_sensor_ts = now + DEVICE_LOOP_INTERVAL
+
+        time.sleep(BUTTON_POLL_INTERVAL_SECONDS)
 
 
 def face_capture_loop():
