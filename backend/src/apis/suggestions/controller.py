@@ -3,7 +3,13 @@ import json
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from src.database.core import get_db
-from src.apis.suggestions.models import SuggestionResponse, SuggestionsListResponse, SuggestionAcceptRequest
+from src.apis.suggestions.models import (
+    SuggestionResponse,
+    SuggestionsListResponse,
+    SuggestionAcceptRequest,
+    SuggestionFeedbackRequest,
+    SuggestionFeedbackResponse,
+)
 from src.apis.suggestions.service import SuggestionService
 from src.entities.suggestion_log import SuggestionLog
 
@@ -32,6 +38,29 @@ def get_user_id_from_request(db: Session) -> str:
         return str(row[0])
 
     return "550e8400-e29b-41d4-a716-446655440000"
+
+
+def _load_suggestion_detail(db: Session, suggestion_id: int):
+    return db.execute(text("""
+        SELECT sl.id, sl.user_id, sl.pattern_id, sl.action_type::text AS action_type,
+               sl.suggestion_text, sl.suggestion_json, sl.was_accepted,
+               fb.feedback_type AS latest_feedback_type,
+               fb.feedback_reason AS latest_feedback_reason,
+               fb.feedback_time,
+               sl.created_at
+        FROM suggestion_logs sl
+        LEFT JOIN LATERAL (
+            SELECT
+                sfl.feedback_type::text AS feedback_type,
+                sfl.feedback_reason,
+                sfl.feedback_time
+            FROM suggestion_feedback_logs sfl
+            WHERE sfl.suggestion_id = sl.id
+            ORDER BY sfl.feedback_time DESC, sfl.id DESC
+            LIMIT 1
+        ) fb ON true
+        WHERE sl.id = :id
+    """), {"id": suggestion_id}).mappings().first()
 
 
 # ─── Routes ────────────────────────────────────────────────────────────────────
@@ -79,12 +108,7 @@ def get_suggestion_detail(
     db: Session = Depends(get_db),
 ):
     """Lấy chi tiết 1 gợi ý."""
-    suggestion = db.execute(text("""
-        SELECT id, user_id, pattern_id, action_type::text AS action_type,
-               suggestion_text, suggestion_json, was_accepted, created_at
-        FROM suggestion_logs
-        WHERE id = :id
-    """), {"id": suggestion_id}).mappings().first()
+    suggestion = _load_suggestion_detail(db, suggestion_id)
     
     if not suggestion:
         raise HTTPException(status_code=404, detail="Suggestion not found")
@@ -125,14 +149,38 @@ def accept_suggestion(
             "payload": json.dumps({"action_taken": request.action_taken}),
         })
         db.commit()
-        suggestion = db.execute(text("""
-            SELECT id, user_id, pattern_id, action_type::text AS action_type,
-                   suggestion_text, suggestion_json, was_accepted, created_at
-            FROM suggestion_logs
-            WHERE id = :id
-        """), {"id": suggestion_id}).mappings().first()
+        suggestion = _load_suggestion_detail(db, suggestion_id)
     
-    return SuggestionResponse.model_validate(suggestion)
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Suggestion not found")
+
+    return SuggestionResponse.model_validate(dict(suggestion))
+
+
+@router.post("/{suggestion_id}/feedback", response_model=SuggestionFeedbackResponse)
+def submit_suggestion_feedback(
+    suggestion_id: int,
+    request: SuggestionFeedbackRequest,
+    db: Session = Depends(get_db),
+):
+    """Lưu feedback chuẩn hóa cho suggestion."""
+    feedback_type = request.feedback_type.upper().strip()
+    if feedback_type not in {"ACCEPT", "REJECT", "IGNORE"}:
+        raise HTTPException(status_code=400, detail="feedback_type must be ACCEPT, REJECT, or IGNORE")
+
+    user_id = get_user_id_from_request(db)
+    feedback = SuggestionService.record_suggestion_feedback(
+        session=db,
+        suggestion_id=suggestion_id,
+        user_id=user_id,
+        feedback_type=feedback_type,
+        feedback_reason=request.feedback_reason,
+    )
+
+    if not feedback:
+        raise HTTPException(status_code=404, detail="Suggestion not found")
+
+    return SuggestionFeedbackResponse.model_validate(feedback)
 
 
 @router.get("/filter/by-type", response_model=list[SuggestionResponse])
@@ -152,3 +200,23 @@ def get_suggestions_by_type(
     )
     
     return [SuggestionResponse.model_validate(s) for s in suggestions]
+    return [SuggestionResponse.model_validate(s) for s in suggestions]
+
+
+@router.get("/metrics/dashboard", response_model=SuggestionDashboardResponse)
+def get_suggestion_dashboard(
+    home_id: Optional[str] = Query(None),
+    user_id: Optional[str] = Query(None),
+    days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+):
+    """
+    Lấy dữ liệu metrics cho dashboard (A. Suggestion, B. Quality, C. Guardrail).
+    """
+    metrics = SuggestionService.get_suggestion_dashboard_metrics(
+        session=db,
+        home_id=home_id,
+        user_id=user_id,
+        days=days,
+    )
+    return SuggestionDashboardResponse.model_validate(metrics)
