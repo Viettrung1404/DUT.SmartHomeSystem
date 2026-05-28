@@ -1,30 +1,30 @@
 [
     {
-        "id": "234f254d-d228-4fc4-ac78-f70df935ec7f",
+        "id": "d107b36e-9576-4ab4-877e-8facd4dd2a29",
         "kind": "light",
         "room": "khach",
         "name": "Living light"
     },
     {
-        "id": "678afb75-b2d8-428a-9c8e-5af6c357f19e",
+        "id": "8000d19f-46ee-4271-80b4-1168d1b1834e",
         "kind": "light",
         "room": "ngu",
         "name": "Bedroom light"
     },
     {
-        "id": "2f346bf3-553b-42ee-b6e8-f09e44c3fa2c",
+        "id": "eb2dc712-7b4f-4c82-acf2-e88fa0352797",
         "kind": "fan",
         "room": "ngu",
         "name": "Bedroom fan"
     },
     {
-        "id": "5fe3754d-e1f6-48e3-b9e4-e9379e6b8e42",
+        "id": "e3896e00-1c28-4d8b-98ae-17f4bb501e4f",
         "kind": "fan",
         "room": "khach",
         "name": "Living fan"
     },
     {
-        "id": "104bcbbc-f40e-4b8c-994a-ceb4f7fcc3cb",
+        "id": "097527ff-2aed-4d01-94ce-1642f36abee2",
         "kind": "door",
         "name": "Door"
     },
@@ -34,7 +34,7 @@
         "name": "Buzzer"
     },
     {
-        "id": "fee0abdc-ba55-4593-89e4-0bb127a14659",
+        "id": "3a9b486f-8cb0-4cdd-b992-dfb36029b89a",
         "kind": "distance_light",
         "name": "Distance light"
     },
@@ -44,12 +44,12 @@
         "name": "Temp/Humidity"
     },
     {
-        "id": "6eed3352-2192-4a11-abf4-36790c39cd2f",
+        "id": "065dcd9c-7b1e-40f8-a1f0-ff1301dd9d3a",
         "kind": "distance_sensor",
         "name": "Ultrasonic sensor"
     },
     {
-        "id": "0087eb8c-0151-4863-b1c0-a211c5fadaf9",
+        "id": "9cc4a587-e51d-42c4-9e17-9c00f461e89c",
         "kind": "gas_sensor",
         "name": "Gas sensor"
     },
