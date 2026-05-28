@@ -1,3 +1,5 @@
+from src.entities.models import HomeUser
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from src.apis.auth.controller import router as auth_router
 from src.apis.auth import service as auth_service
@@ -14,9 +16,8 @@ from src.apis.face.controller import router as face_router
 from src.apis.suggestions.controller import router as suggestions_router
 from src.websocket import ws_manager
 from src.database.core import SessionLocal
-from src.entities.home_member import HomeMember
-from uuid import UUID
 
+from uuid import UUID
 
 def register_routes(app: FastAPI):
     # REST API routes
@@ -61,8 +62,8 @@ def register_routes(app: FastAPI):
         db = SessionLocal()
         try:
             member = (
-                db.query(HomeMember)
-                .filter(HomeMember.home_id == home_uuid, HomeMember.user_id == user_id)
+                db.query(HomeUser)
+                .filter(HomeUser.home_id == home_uuid, HomeUser.user_id == user_id)
                 .first()
             )
             if not member:

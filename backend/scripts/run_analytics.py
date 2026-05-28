@@ -172,16 +172,17 @@ def extract_feature_vector(session: Session, home_id, user_id, lookback_days=60)
 
     rows = session.execute(text("""
         SELECT
-            EXTRACT(HOUR FROM timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')::int AS hour,
-            EXTRACT(DOW  FROM timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')::int AS dow,
-            device_id,
-            duration_seconds
-        FROM activity_logs
-        WHERE home_id     = :hid
-          AND user_id     = :uid
-          AND event_type  = 'DEVICE_ON'
-          AND trigger_source IN ('USER', 'PHYSICAL_ATTRIBUTED')
-          AND timestamp  >= :since
+            EXTRACT(HOUR FROM al.timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')::int AS hour,
+            EXTRACT(DOW  FROM al.timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')::int AS dow,
+            d.slug AS device_slug,
+            al.duration_seconds
+        FROM activity_logs al
+        JOIN devices d ON al.device_id = d.id
+        WHERE al.home_id     = :hid
+          AND al.user_id     = :uid
+          AND al.event_type  = 'DEVICE_ON'
+          AND al.trigger_source IN ('USER', 'PHYSICAL_ATTRIBUTED')
+          AND al.timestamp  >= :since
     """), {"hid": str(home_id), "uid": str(user_id), "since": since}).fetchall()
 
     if len(rows) < 20:
@@ -198,7 +199,7 @@ def extract_feature_vector(session: Session, home_id, user_id, lookback_days=60)
         hour_counts[int(r.hour)] += 1
         if int(r.dow) in (0, 6):  # CN=0, T7=6 trong PostgreSQL DOW
             weekend_count += 1
-        devices_used.add(r.device_id)
+        devices_used.add(r.device_slug)
         if r.duration_seconds:
             durations.append(r.duration_seconds)
 

@@ -336,6 +336,7 @@ def evaluate_usefulness(
     pattern_type: str,
     pattern_data: dict,
     device_id: str | None,
+    device_slug: str | None,
     home_id: str,
 ) -> tuple[bool, list[str]]:
     """
@@ -358,7 +359,7 @@ def evaluate_usefulness(
             reasons.append("duration_above_baseline")
 
         # Rule B: energy-heavy device.
-        if is_energy_heavy_device(device_id):
+        if is_energy_heavy_device(device_slug):
             reasons.append("energy_heavy_device")
 
         # Rule C: unusual hour window.
@@ -479,6 +480,7 @@ def load_active_patterns(session: Session, home_id: str | None):
             up.user_id,
             up.home_id,
             up.device_id,
+            d.slug AS device_slug,
             up.pattern_type,
             up.pattern_data,
             up.confidence,
@@ -486,6 +488,7 @@ def load_active_patterns(session: Session, home_id: str | None):
             u.email
         FROM user_patterns up
         JOIN users u ON u.id = up.user_id
+        LEFT JOIN devices d ON d.id = up.device_id
         WHERE up.is_active = true
     """
     params = {}
@@ -520,7 +523,7 @@ def run_decision_scoring(home_id: str | None, threshold: float, write_json: str 
                 "pattern_confidence": clamp01(float(r.confidence or 0.5)),
                 "anomaly_severity": anomaly_severity(r.pattern_type, pdata),
                 "historical_acceptance": hist,
-                "energy_saving_potential": energy_saving_potential(r.device_id, r.pattern_type),
+                "energy_saving_potential": energy_saving_potential(r.device_slug, r.pattern_type),
                 "user_preference": user_preference_proxy(r.pattern_type, hist),
                 "urgency": urgency_score(r.pattern_type, pdata),
             }
@@ -531,6 +534,7 @@ def run_decision_scoring(home_id: str | None, threshold: float, write_json: str 
                 pattern_type=r.pattern_type,
                 pattern_data=pdata,
                 device_id=r.device_id,
+                device_slug=r.device_slug,
                 home_id=str(r.home_id),
             )
 
@@ -544,7 +548,7 @@ def run_decision_scoring(home_id: str | None, threshold: float, write_json: str 
                     session=session,
                     user_id=str(r.user_id),
                     pattern_type=r.pattern_type,
-                    device_id=r.device_id,
+                    device_id=r.device_slug,
                     usefulness_reasons=usefulness_reasons,
                     score_breakdown=comps,
                     pattern_data=pdata,
@@ -570,7 +574,7 @@ def run_decision_scoring(home_id: str | None, threshold: float, write_json: str 
                 priority_score, priority_reason, hard_override = compute_priority_components(
                     pattern_type=r.pattern_type,
                     pattern_data=pdata,
-                    device_id=r.device_id,
+                    device_id=r.device_slug,
                     score_breakdown=comps,
                     usefulness_reasons=usefulness_reasons,
                 )

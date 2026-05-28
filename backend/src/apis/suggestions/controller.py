@@ -1,5 +1,8 @@
+from src.entities.models import SuggestionLog
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 import json
+from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from src.database.core import get_db
@@ -9,12 +12,11 @@ from src.apis.suggestions.models import (
     SuggestionAcceptRequest,
     SuggestionFeedbackRequest,
     SuggestionFeedbackResponse,
+    SuggestionDashboardResponse,
 )
 from src.apis.suggestions.service import SuggestionService
-from src.entities.suggestion_log import SuggestionLog
 
 router = APIRouter(prefix="/suggestions", tags=["suggestions"])
-
 
 # ─── Dependencies ─────────────────────────────────────────────────────────────
 # TODO: Thêm dependency check_current_user khi authenticate hoàn chỉnh
@@ -39,7 +41,6 @@ def get_user_id_from_request(db: Session) -> str:
 
     return "550e8400-e29b-41d4-a716-446655440000"
 
-
 def _load_suggestion_detail(db: Session, suggestion_id: int):
     return db.execute(text("""
         SELECT sl.id, sl.user_id, sl.pattern_id, sl.action_type::text AS action_type,
@@ -61,7 +62,6 @@ def _load_suggestion_detail(db: Session, suggestion_id: int):
         ) fb ON true
         WHERE sl.id = :id
     """), {"id": suggestion_id}).mappings().first()
-
 
 # ─── Routes ────────────────────────────────────────────────────────────────────
 
@@ -101,7 +101,6 @@ def get_my_suggestions(
         suggestions=suggestion_responses,
     )
 
-
 @router.get("/{suggestion_id}", response_model=SuggestionResponse)
 def get_suggestion_detail(
     suggestion_id: int,
@@ -114,7 +113,6 @@ def get_suggestion_detail(
         raise HTTPException(status_code=404, detail="Suggestion not found")
     
     return SuggestionResponse.model_validate(dict(suggestion))
-
 
 @router.post("/{suggestion_id}/accept", response_model=SuggestionResponse)
 def accept_suggestion(
@@ -156,7 +154,6 @@ def accept_suggestion(
 
     return SuggestionResponse.model_validate(dict(suggestion))
 
-
 @router.post("/{suggestion_id}/feedback", response_model=SuggestionFeedbackResponse)
 def submit_suggestion_feedback(
     suggestion_id: int,
@@ -182,7 +179,6 @@ def submit_suggestion_feedback(
 
     return SuggestionFeedbackResponse.model_validate(feedback)
 
-
 @router.get("/filter/by-type", response_model=list[SuggestionResponse])
 def get_suggestions_by_type(
     action_type: str = Query(..., description="SCHEDULE | ALERT | AUTOMATION"),
@@ -200,8 +196,6 @@ def get_suggestions_by_type(
     )
     
     return [SuggestionResponse.model_validate(s) for s in suggestions]
-    return [SuggestionResponse.model_validate(s) for s in suggestions]
-
 
 @router.get("/metrics/dashboard", response_model=SuggestionDashboardResponse)
 def get_suggestion_dashboard(

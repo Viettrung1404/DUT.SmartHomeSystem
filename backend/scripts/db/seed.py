@@ -44,16 +44,12 @@ from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 
 from src.database.core import Base
-from src.entities.user import User
-from src.entities.home import Home
-from src.entities.home_member import HomeMember
-from src.entities.room import Room
-from src.entities.device import Device
-from src.entities.automation import Automation, AutomationCondition, AutomationAction
-from src.entities.device_log import DeviceLog
-from src.entities.energy_log import EnergyLog
-from src.entities.security_event import SecurityEvent
-from src.entities.suggestion_log import SuggestionLog
+from src.entities.models import (
+    User, Home, HomeUser, Room, Device, DeviceState, Schedule,
+    ActivityLog, SensorData, SuggestionLog, Automation, 
+    AutomationCondition, AutomationAction, DeviceLog, 
+    EnergyLog, SecurityEvent
+)
 
 # ── Đọc DATABASE_URL từ .env nếu có ───────────────────────────────────────────
 try:
@@ -75,9 +71,10 @@ def now_utc(offset_hours: float = 0) -> datetime:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 TABLES_NEW = [
-    "suggestion_logs", "security_events", "energy_logs", "device_logs",
+    "suggestion_logs", "user_patterns", "security_events", "energy_logs", "activity_logs", "device_logs",
     "automation_actions", "automation_conditions", "automations",
-    "devices", "rooms", "home_members", "homes",
+    "sensor_data", "schedules", "device_states",
+    "devices", "rooms", "home_users", "homes",
     "password_reset_tokens", "auth_sessions", "users",
 ]
 
@@ -157,12 +154,10 @@ def seed_homes(db: Session, users: dict) -> dict:
 
     homes_data = [
         dict(
-            owner_id=admin.id,
             name="Nhà Nguyễn Văn Admin",
             address="123 Đường Lê Lợi, Quận 1, TP. Hồ Chí Minh",
         ),
         dict(
-            owner_id=owner2.id,
             name="Biệt thự Phạm Gia",
             address="456 Đường Nguyễn Huệ, Quận 3, TP. Hồ Chí Minh",
         ),
@@ -191,23 +186,23 @@ def seed_home_members(db: Session, users: dict, homes: dict):
 
     memberships = [
         # Home 1: admin là owner, member là member
-        dict(home_id=home1.id, user_id=admin.id,  role="owner"),
-        dict(home_id=home1.id, user_id=member.id, role="member"),
+        dict(home_id=home1.id, user_id=admin.id,  role="ADMIN"),
+        dict(home_id=home1.id, user_id=member.id, role="MEMBER"),
         # Home 2: owner2 là owner, member và guest là member
-        dict(home_id=home2.id, user_id=owner2.id, role="owner"),
-        dict(home_id=home2.id, user_id=member.id, role="member"),
-        dict(home_id=home2.id, user_id=guest.id,  role="member"),
+        dict(home_id=home2.id, user_id=owner2.id, role="ADMIN"),
+        dict(home_id=home2.id, user_id=member.id, role="MEMBER"),
+        dict(home_id=home2.id, user_id=guest.id,  role="MEMBER"),
     ]
 
     for data in memberships:
         # Skip nếu đã tồn tại
-        exists = db.query(HomeMember).filter_by(
+        exists = db.query(HomeUser).filter_by(
             home_id=data["home_id"], user_id=data["user_id"]
         ).first()
         if exists:
             continue
-        hm = HomeMember(id=uuid.uuid4(), **data,
-                        joined_at=now_utc(offset_hours=47))
+        hm = HomeUser(home_id=data["home_id"], user_id=data["user_id"], role=data["role"].upper(),
+                      joined_at=now_utc(offset_hours=47))
         db.add(hm)
 
     db.flush()
@@ -235,7 +230,7 @@ def seed_rooms(db: Session, homes: dict) -> dict:
 
     rooms = {}
     for home_id, name, icon in rooms_def:
-        room = Room(id=uuid.uuid4(), home_id=home_id, name=name, icon=icon,
+        room = Room(home_id=home_id, name=name, icon=icon,
                     created_at=now_utc(offset_hours=46))
         db.add(room)
         db.flush()
@@ -279,7 +274,7 @@ def seed_devices(db: Session, rooms: dict, homes: dict) -> dict:
              metadata_json={"isLocked": True, "battery": 87},
              last_seen=now),
         dict(room_id=room(home1, "Phòng ngủ chính").id,
-             name="Rèm thông minh", type="curtain",
+             name="Rèm thông minh", type="lock",
              status=False, online_status=True,
              metadata_json={"position": 100},
              last_seen=now),
@@ -372,11 +367,36 @@ def seed_devices(db: Session, rooms: dict, homes: dict) -> dict:
 
     devices = {}
     for data in devices_def:
-        device = Device(id=uuid.uuid4(),
-                        created_at=now_utc(offset_hours=40),
-                        **data)
+        import unicodedata
+        import re
+        slug_base = unicodedata.normalize('NFKD', data["name"]).encode('ascii', 'ignore').decode('ascii').lower()
+        slug = re.sub(r'[^a-z0-9]+', '_', slug_base).strip('_')
+        
+        dev_id = uuid.uuid4()
+        device = Device(
+            id=dev_id,
+            slug=slug,
+            room_id=data["room_id"],
+            name=data["name"],
+            type=data["type"].upper(),
+            mqtt_topic=f"home/{slug}",
+            config={},
+            created_at=now_utc(offset_hours=40)
+        )
         db.add(device)
         db.flush()
+        
+        state_dict = {"power": "ON" if data.get("status") else "OFF"}
+        state_dict.update(data.get("metadata_json", {}))
+        
+        d_state = DeviceState(
+            device_id=dev_id,
+            is_online=data.get("online_status", False),
+            state=state_dict,
+            last_updated=data.get("last_seen", now_utc())
+        )
+        db.add(d_state)
+        
         devices[data["name"]] = device
 
     print(f"  + created {len(devices_def)} devices")

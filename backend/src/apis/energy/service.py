@@ -1,22 +1,19 @@
+from src.entities.models import EnergyLog, Device, Room, HomeUser
+
 from uuid import UUID
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from src.entities.energy_log import EnergyLog
-from src.entities.device import Device
-from src.entities.room import Room
-from src.entities.home_member import HomeMember
+
 from src.exceptions import ForbiddenError
 from . import models
 
-
 def _check_home_access(db: Session, home_id: UUID, user_id: UUID):
-    member = db.query(HomeMember).filter(
-        HomeMember.home_id == home_id, HomeMember.user_id == user_id
+    member = db.query(HomeUser).filter(
+        HomeUser.home_id == home_id, HomeUser.user_id == user_id
     ).first()
     if not member:
         raise ForbiddenError("Bạn không có quyền truy cập")
-
 
 def _get_home_devices(db: Session, home_id: UUID) -> list[Device]:
     rooms = db.query(Room).filter(Room.home_id == home_id).all()
@@ -24,7 +21,6 @@ def _get_home_devices(db: Session, home_id: UUID) -> list[Device]:
     if not room_ids:
         return []
     return db.query(Device).filter(Device.room_id.in_(room_ids)).all()
-
 
 def get_daily_energy(db: Session, home_id: UUID, user_id: UUID) -> models.EnergySummaryResponse:
     _check_home_access(db, home_id, user_id)
@@ -84,7 +80,6 @@ def get_daily_energy(db: Session, home_id: UUID, user_id: UUID) -> models.Energy
         breakdown=breakdown, comparison=comparison
     )
 
-
 def get_weekly_energy(db: Session, home_id: UUID, user_id: UUID) -> models.EnergySummaryResponse:
     _check_home_access(db, home_id, user_id)
     devices = _get_home_devices(db, home_id)
@@ -110,7 +105,6 @@ def get_weekly_energy(db: Session, home_id: UUID, user_id: UUID) -> models.Energ
         data_points.append(models.EnergyDataPoint(label=day_labels[dow], value=round(usage, 2)))
 
     return models.EnergySummaryResponse(total=round(total, 2), data=data_points)
-
 
 def get_monthly_energy(db: Session, home_id: UUID, user_id: UUID) -> models.EnergySummaryResponse:
     _check_home_access(db, home_id, user_id)

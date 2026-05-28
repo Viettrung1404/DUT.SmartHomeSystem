@@ -12,18 +12,7 @@ from .automation.engine import init_automation_engine, stop_automation_engine
 import logging
 
 # Import all entities so they are registered with Base.metadata
-from .entities.user import User
-from .entities.home import Home
-from .entities.home_member import HomeMember
-from .entities.room import Room
-from .entities.device import Device
-from .entities.device_log import DeviceLog
-from .entities.automation import Automation, AutomationCondition, AutomationAction
-from .entities.energy_log import EnergyLog
-from .entities.security_event import SecurityEvent
-from .entities.suggestion_log import SuggestionLog
-from .entities.auth_session import AuthSession
-from .entities.password_reset_token import PasswordResetToken
+from .entities import models
 
 configure_logging(LogLevels.info)
 

@@ -1,9 +1,10 @@
+from src.entities.models import SuggestionLog
+
 from sqlalchemy.orm import Session
 from sqlalchemy import text, desc
-from src.entities.suggestion_log import SuggestionLog
+
 from datetime import datetime
 import json
-
 
 LATEST_FEEDBACK_JOIN = """
     LEFT JOIN LATERAL (
@@ -17,7 +18,6 @@ LATEST_FEEDBACK_JOIN = """
         LIMIT 1
     ) fb ON true
 """
-
 
 class SuggestionService:
     @staticmethod

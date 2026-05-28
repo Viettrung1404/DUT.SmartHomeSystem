@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 # backend/src/entities/models.py
 # Phiên bản hoàn chỉnh — có thêm bảng Home để support multi-tenant
 
@@ -5,7 +6,7 @@ from sqlalchemy import (
     Column, Integer, String, Boolean, ForeignKey,
     Float, DateTime, Enum, Text, Time, UniqueConstraint, JSON
 )
-from sqlalchemy.dialects.postgresql import UUID, ARRAY
+from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
@@ -137,7 +138,7 @@ class HomeUser(Base):
 class Room(Base):
     __tablename__ = "rooms"
 
-    id         = Column(Integer, primary_key=True, index=True)
+    id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     home_id    = Column(UUID(as_uuid=True), ForeignKey("homes.id", ondelete="CASCADE"),
                         nullable=False)             # ← THÊM MỚI
     name       = Column(String(50), nullable=False)
@@ -153,8 +154,9 @@ class Room(Base):
 class Device(Base):
     __tablename__ = "devices"
 
-    id         = Column(String(50), primary_key=True)
-    room_id    = Column(Integer, ForeignKey("rooms.id", ondelete="SET NULL"),
+    id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    slug       = Column(String(100), unique=True, index=True)
+    room_id    = Column(UUID(as_uuid=True), ForeignKey("rooms.id", ondelete="SET NULL"),
                         nullable=True)
     name       = Column(String(100))
     type       = Column(Enum(DeviceType), nullable=False)
@@ -199,7 +201,7 @@ class User(Base):
 class DeviceState(Base):
     __tablename__ = "device_states"
 
-    device_id    = Column(String(50), ForeignKey("devices.id", ondelete="CASCADE"),
+    device_id    = Column(UUID(as_uuid=True), ForeignKey("devices.id", ondelete="CASCADE"),
                           primary_key=True)
     is_online    = Column(Boolean, default=False)
     state        = Column(JSON, default={}, nullable=False)
@@ -213,7 +215,7 @@ class Schedule(Base):
     __tablename__ = "schedules"
 
     id                   = Column(Integer, primary_key=True, index=True)
-    device_id            = Column(String(50), ForeignKey("devices.id", ondelete="CASCADE"))
+    device_id            = Column(UUID(as_uuid=True), ForeignKey("devices.id", ondelete="CASCADE"))
     name                 = Column(String(100))
     time                 = Column(Time, nullable=False)
     days_of_week         = Column(ARRAY(Integer))
@@ -237,7 +239,7 @@ class UserPresence(Base):
     home_id     = Column(UUID(as_uuid=True), ForeignKey("homes.id"),
                          nullable=True)                # ← THÊM MỚI
     # null = chưa xác định đang ở nhà nào (user có nhiều nhà)
-    room_id     = Column(Integer, ForeignKey("rooms.id"), nullable=True)
+    room_id     = Column(UUID(as_uuid=True), ForeignKey("rooms.id"), nullable=True)
     is_home     = Column(Boolean, default=False)
     detected_by = Column(String(20), default="APP")
     last_seen   = Column(DateTime(timezone=True), server_default=func.now())
@@ -261,7 +263,7 @@ class ActivityLog(Base):
     event_type       = Column(Enum(EventType), nullable=False)
     trigger_source   = Column(Enum(TriggerSource), default=TriggerSource.USER,
                               nullable=False)
-    device_id        = Column(String(50), ForeignKey("devices.id"), nullable=False)
+    device_id        = Column(UUID(as_uuid=True), ForeignKey("devices.id"), nullable=False)
     user_id          = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     home_id          = Column(UUID(as_uuid=True), ForeignKey("homes.id"),
                               nullable=False, index=True)  # ← THÊM MỚI
@@ -282,7 +284,7 @@ class SensorData(Base):
 
     time        = Column(DateTime(timezone=True), primary_key=True,
                          server_default=func.now())
-    device_id   = Column(String(50), ForeignKey("devices.id"), primary_key=True)
+    device_id   = Column(UUID(as_uuid=True), ForeignKey("devices.id"), primary_key=True)
     metric_type = Column(Enum(MetricType), primary_key=True)
     value       = Column(Float, nullable=False)
 
@@ -300,7 +302,7 @@ class UserPattern(Base):
                           nullable=False)               # ← THÊM MỚI
     # Quan trọng: cùng 1 user, thói quen ở nhà bố mẹ ≠ nhà riêng
     # KMeans train riêng cho từng (user_id, home_id)
-    device_id    = Column(String(50), ForeignKey("devices.id"), nullable=True)
+    device_id    = Column(UUID(as_uuid=True), ForeignKey("devices.id"), nullable=True)
     pattern_type = Column(Enum(PatternType), nullable=False)
     pattern_data = Column(JSON, nullable=False)
     confidence   = Column(Float, default=1.0)
@@ -363,3 +365,131 @@ class SuggestionDecisionLog(Base):
     pattern = relationship("UserPattern")
     home    = relationship("Home")
     user    = relationship("User")
+
+class Automation(Base):
+
+    __tablename__ = 'automations'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    home_id = Column(UUID(as_uuid=True), ForeignKey('homes.id', ondelete='CASCADE'), nullable=False)
+    name = Column(String, nullable=False)
+    enabled = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    # Relationships
+    home = relationship("Home")
+    conditions = relationship("AutomationCondition", back_populates="automation", cascade="all, delete-orphan")
+    actions = relationship("AutomationAction", back_populates="automation", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<Automation(name='{self.name}', enabled={self.enabled})>"
+
+
+class AutomationCondition(Base):
+    __tablename__ = 'automation_conditions'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    automation_id = Column(UUID(as_uuid=True), ForeignKey('automations.id', ondelete='CASCADE'), nullable=False)
+    condition_type = Column(String, nullable=False)  # 'time', 'device_status', 'motion', 'energy', 'temperature'
+    value = Column(String, nullable=False)  # e.g., '22:00', 'device_d1_off', '> 15 kWh'
+
+    # Relationships
+    automation = relationship("Automation", back_populates="conditions")
+
+    def __repr__(self):
+        return f"<AutomationCondition(type='{self.condition_type}', value='{self.value}')>"
+
+
+class AutomationAction(Base):
+    __tablename__ = 'automation_actions'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    automation_id = Column(UUID(as_uuid=True), ForeignKey('automations.id', ondelete='CASCADE'), nullable=False)
+    device_id = Column(UUID(as_uuid=True), ForeignKey('devices.id'), nullable=True)
+    action = Column(String, nullable=False)  # 'toggle', 'set_brightness', 'set_temperature', 'lock', 'notify'
+    value = Column(String, nullable=True)    # e.g., 'off', '50', '24'
+
+    # Relationships
+    automation = relationship("Automation", back_populates="actions")
+    device = relationship("Device")
+
+    def __repr__(self):
+        return f"<AutomationAction(action='{self.action}', value='{self.value}')>"
+
+
+class DeviceLog(Base):
+
+    __tablename__ = 'device_logs'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    device_id = Column(UUID(as_uuid=True), ForeignKey('devices.id', ondelete='CASCADE'), nullable=False)
+    action = Column(String, nullable=False)  # 'toggle', 'brightness', 'temperature', 'mode', etc.
+    value = Column(String, nullable=True)    # action value as string
+    timestamp = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+
+    # Relationships
+    device = relationship("Device")
+
+    def __repr__(self):
+        return f"<DeviceLog(device_id='{self.device_id}', action='{self.action}')>"
+
+
+class EnergyLog(Base):
+
+    __tablename__ = 'energy_logs'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    device_id = Column(UUID(as_uuid=True), ForeignKey('devices.id', ondelete='CASCADE'), nullable=False)
+    power_usage = Column(Float, nullable=False)  # kWh
+    timestamp = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+
+    # Relationships
+    device = relationship("Device")
+
+    def __repr__(self):
+        return f"<EnergyLog(device_id='{self.device_id}', power_usage={self.power_usage})>"
+
+
+class SecurityEvent(Base):
+
+    __tablename__ = 'security_events'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    home_id = Column(UUID(as_uuid=True), ForeignKey('homes.id', ondelete='CASCADE'), nullable=False)
+    event_type = Column(String, nullable=False)  # 'motion_detected', 'door_opened', 'device_offline', 'unusual_activity', 'smoke_detected'
+    severity = Column(String, nullable=False, default='low')  # 'low', 'medium', 'high'
+    description = Column(String, nullable=False)
+    timestamp = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+
+    # Relationships
+    home = relationship("Home")
+
+    def __repr__(self):
+        return f"<SecurityEvent(type='{self.event_type}', severity='{self.severity}')>"
+
+
+class AuthSession(Base):
+
+    __tablename__ = "auth_sessions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    refresh_token_hash = Column(String, nullable=False, unique=True)
+    user_agent = Column(String, nullable=True)
+    ip_address = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class PasswordResetToken(Base):
+
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash = Column(String, nullable=False, unique=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))

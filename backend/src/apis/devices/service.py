@@ -1,58 +1,59 @@
+from src.entities.models import Device, DeviceLog, Room, HomeUser
+
 from uuid import UUID, uuid4
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
-from src.entities.device import Device
-from src.entities.device_log import DeviceLog
-from src.entities.room import Room
-from src.entities.home_member import HomeMember
+
 from src.exceptions import DeviceNotFoundError, DeviceOfflineError, ForbiddenError, RoomNotFoundError
 from src.mqtt_client import publish_device_command
 from . import models
 import logging
 
-
 def _check_device_access(db: Session, device: Device, user_id: UUID):
     room = db.query(Room).filter(Room.id == device.room_id).first()
     if not room:
         raise RoomNotFoundError()
-    member = db.query(HomeMember).filter(
-        HomeMember.home_id == room.home_id, HomeMember.user_id == user_id
+    member = db.query(HomeUser).filter(
+        HomeUser.home_id == room.home_id, HomeUser.user_id == user_id
     ).first()
     if not member:
         raise ForbiddenError("Bạn không có quyền truy cập thiết bị này")
-
 
 def create_device(db: Session, user_id: UUID, data: models.DeviceCreate) -> Device:
     room = db.query(Room).filter(Room.id == UUID(data.room_id)).first()
     if not room:
         raise RoomNotFoundError()
-    member = db.query(HomeMember).filter(
-        HomeMember.home_id == room.home_id, HomeMember.user_id == user_id
+    member = db.query(HomeUser).filter(
+        HomeUser.home_id == room.home_id, HomeUser.user_id == user_id
     ).first()
     if not member:
         raise ForbiddenError("Bạn không có quyền thêm thiết bị")
 
     device = Device(
-        id=uuid4(), room_id=room.id, name=data.name, type=data.type,
-        metadata_json=data.metadata or {}
+        room_id=room.id, name=data.name, type=data.type.upper(),
+        config=data.metadata or {}
     )
     db.add(device)
     db.commit()
     db.refresh(device)
+    
+    from src.entities.models import DeviceState
+    d_state = DeviceState(device_id=device.id, is_online=False, state={})
+    db.add(d_state)
+    db.commit()
+    db.refresh(device)
     return device
-
 
 def get_devices_by_room(db: Session, room_id: UUID, user_id: UUID) -> list[Device]:
     room = db.query(Room).filter(Room.id == room_id).first()
     if not room:
         raise RoomNotFoundError(room_id)
-    member = db.query(HomeMember).filter(
-        HomeMember.home_id == room.home_id, HomeMember.user_id == user_id
+    member = db.query(HomeUser).filter(
+        HomeUser.home_id == room.home_id, HomeUser.user_id == user_id
     ).first()
     if not member:
         raise ForbiddenError("Bạn không có quyền truy cập phòng này")
     return db.query(Device).filter(Device.room_id == room_id).all()
-
 
 def get_device(db: Session, device_id: UUID, user_id: UUID) -> Device:
     device = db.query(Device).filter(Device.id == device_id).first()
@@ -61,14 +62,18 @@ def get_device(db: Session, device_id: UUID, user_id: UUID) -> Device:
     _check_device_access(db, device, user_id)
     return device
 
-
 def toggle_device(db: Session, device_id: UUID, user_id: UUID, data: models.DeviceToggleRequest) -> Device:
+    from sqlalchemy.orm.attributes import flag_modified
     device = get_device(db, device_id, user_id)
-    if not device.online_status:
+    if not device.state or not device.state.is_online:
         raise DeviceOfflineError(device_id)
 
-    device.status = data.status
-    device.last_seen = datetime.now(timezone.utc)
+    if device.state is None:
+        device.state = DeviceState(device_id=device.id, is_online=True, state={})
+
+    device.state.state["power"] = "ON" if data.status else "OFF"
+    device.state.last_updated = datetime.now(timezone.utc)
+    flag_modified(device.state, "state")
 
     # Log action
     log = DeviceLog(id=uuid4(), device_id=device.id, action='toggle', value=str(data.status))
@@ -90,14 +95,14 @@ def toggle_device(db: Session, device_id: UUID, user_id: UUID, data: models.Devi
 
     return device
 
-
 def send_command(db: Session, device_id: UUID, user_id: UUID, data: models.DeviceCommandRequest) -> Device:
+    from sqlalchemy.orm.attributes import flag_modified
     device = get_device(db, device_id, user_id)
-    if not device.online_status:
+    if not device.state or not device.state.is_online:
         raise DeviceOfflineError(device_id)
 
     # Update metadata based on command
-    metadata = device.metadata_json or {}
+    metadata = device.state.state or {}
     if data.command == 'set_brightness':
         metadata['brightness'] = data.value
     elif data.command == 'set_temperature':
@@ -107,8 +112,9 @@ def send_command(db: Session, device_id: UUID, user_id: UUID, data: models.Devic
     elif data.command in ('lock', 'unlock'):
         metadata['isLocked'] = data.command == 'lock'
 
-    device.metadata_json = metadata
-    device.last_seen = datetime.now(timezone.utc)
+    device.state.state = metadata
+    device.state.last_updated = datetime.now(timezone.utc)
+    flag_modified(device.state, "state")
 
     # Log
     log = DeviceLog(id=uuid4(), device_id=device.id, action=data.command, value=str(data.value))
@@ -124,7 +130,6 @@ def send_command(db: Session, device_id: UUID, user_id: UUID, data: models.Devic
 
     return device
 
-
 def update_device(db: Session, device_id: UUID, user_id: UUID, data: models.DeviceUpdate) -> Device:
     device = get_device(db, device_id, user_id)
 
@@ -132,8 +137,8 @@ def update_device(db: Session, device_id: UUID, user_id: UUID, data: models.Devi
         target_room = db.query(Room).filter(Room.id == UUID(data.room_id)).first()
         if not target_room:
             raise RoomNotFoundError(data.room_id)
-        member = db.query(HomeMember).filter(
-            HomeMember.home_id == target_room.home_id, HomeMember.user_id == user_id
+        member = db.query(HomeUser).filter(
+            HomeUser.home_id == target_room.home_id, HomeUser.user_id == user_id
         ).first()
         if not member:
             raise ForbiddenError("Bạn không có quyền chuyển thiết bị sang phòng này")
@@ -142,30 +147,42 @@ def update_device(db: Session, device_id: UUID, user_id: UUID, data: models.Devi
     if data.name is not None:
         device.name = data.name
     if data.type is not None:
-        device.type = data.type
+        device.type = data.type.upper()
     if data.metadata is not None:
-        device.metadata_json = data.metadata
+        device.config = data.metadata
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(device, "config")
 
     db.commit()
     db.refresh(device)
     return device
-
 
 def delete_device(db: Session, device_id: UUID, user_id: UUID) -> None:
     device = get_device(db, device_id, user_id)
     db.delete(device)
     db.commit()
 
-
 def to_response(device: Device) -> models.DeviceResponse:
+    state = device.state
+    status_bool = False
+    is_online = False
+    last_seen = None
+    meta = device.config or {}
+    
+    if state:
+        is_online = state.is_online
+        status_bool = state.state.get("power", "OFF") == "ON"
+        last_seen = state.last_updated
+        meta.update(state.state)
+
     return models.DeviceResponse(
         id=str(device.id),
         room_id=str(device.room_id),
         name=device.name,
         type=device.type,
-        status=device.status,
-        online_status=device.online_status,
-        last_seen=device.last_seen,
-        metadata=device.metadata_json,
+        status=status_bool,
+        online_status=is_online,
+        last_seen=last_seen,
+        metadata=meta,
         created_at=device.created_at,
     )

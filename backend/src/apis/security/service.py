@@ -1,19 +1,18 @@
+from src.entities.models import SecurityEvent, HomeUser
+
 from uuid import UUID, uuid4
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
-from src.entities.security_event import SecurityEvent
-from src.entities.home_member import HomeMember
+
 from src.exceptions import ForbiddenError
 from . import models
 
-
 def _check_home_access(db: Session, home_id: UUID, user_id: UUID):
-    member = db.query(HomeMember).filter(
-        HomeMember.home_id == home_id, HomeMember.user_id == user_id
+    member = db.query(HomeUser).filter(
+        HomeUser.home_id == home_id, HomeUser.user_id == user_id
     ).first()
     if not member:
         raise ForbiddenError("Bạn không có quyền truy cập")
-
 
 def create_event(db: Session, data: models.SecurityEventCreate) -> SecurityEvent:
     event = SecurityEvent(
@@ -26,13 +25,11 @@ def create_event(db: Session, data: models.SecurityEventCreate) -> SecurityEvent
     db.refresh(event)
     return event
 
-
 def get_events(db: Session, home_id: UUID, user_id: UUID, limit: int = 50) -> list[SecurityEvent]:
     _check_home_access(db, home_id, user_id)
     return db.query(SecurityEvent).filter(
         SecurityEvent.home_id == home_id
     ).order_by(SecurityEvent.timestamp.desc()).limit(limit).all()
-
 
 def get_security_summary(db: Session, home_id: UUID, user_id: UUID) -> models.SecuritySummaryResponse:
     _check_home_access(db, home_id, user_id)

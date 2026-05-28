@@ -1,3 +1,5 @@
+from src.entities.models import AuthSession, PasswordResetToken, User
+
 import hashlib
 import logging
 import secrets
@@ -19,9 +21,7 @@ from src.config.env import (
     REFRESH_TOKEN_EXPIRE_DAYS,
     SECRET_KEY,
 )
-from src.entities.auth_session import AuthSession
-from src.entities.password_reset_token import PasswordResetToken
-from src.entities.user import User
+
 from src.services.mailer import MailerConfigurationError, send_email
 from ...database.core import DbSession
 
@@ -32,22 +32,17 @@ oauth2_bearer = OAuth2PasswordBearer(tokenUrl="/auth/login")
 bcrypt_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 PASSWORD_RESET_TOKEN_EXPIRE_MINUTES = 30
 
-
 def _now() -> datetime:
     return datetime.now(timezone.utc)
-
 
 def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
-
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt_context.verify(plain_password, hashed_password)
 
-
 def get_password_hash(password: str) -> str:
     return bcrypt_context.hash(password)
-
 
 def authenticate_user(email: str, password: str, db: Session) -> User | None:
     user = db.query(User).filter(User.email == email).first()
@@ -57,7 +52,6 @@ def authenticate_user(email: str, password: str, db: Session) -> User | None:
     if not user.is_active:
         raise AuthenticationError("Tài khoản đã bị vô hiệu hóa")
     return user
-
 
 def create_access_token(email: str, user_id: UUID, session_id: UUID, expires_delta: timedelta) -> str:
     payload = {
@@ -69,7 +63,6 @@ def create_access_token(email: str, user_id: UUID, session_id: UUID, expires_del
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
-
 def create_refresh_token(email: str, user_id: UUID, session_id: UUID) -> str:
     payload = {
         "sub": email,
@@ -79,7 +72,6 @@ def create_refresh_token(email: str, user_id: UUID, session_id: UUID) -> str:
         "exp": _now() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
-
 
 def verify_token(token: str, expected_type: str = "access") -> models.TokenData:
     try:
@@ -96,7 +88,6 @@ def verify_token(token: str, expected_type: str = "access") -> models.TokenData:
         logging.warning("Token verification failed: %s", str(exc))
         raise AuthenticationError()
 
-
 def _get_active_session(db: Session, session_id: UUID) -> AuthSession | None:
     session = db.query(AuthSession).filter(AuthSession.id == session_id).first()
     if not session:
@@ -106,7 +97,6 @@ def _get_active_session(db: Session, session_id: UUID) -> AuthSession | None:
     if session.expires_at <= _now():
         return None
     return session
-
 
 def register_user(db: Session, request: models.RegisterUserRequest) -> User:
     try:
@@ -126,7 +116,6 @@ def register_user(db: Session, request: models.RegisterUserRequest) -> User:
         db.rollback()
         logging.error("Failed to register user: %s. Error: %s", request.email, str(exc))
         raise
-
 
 def login_user(email: str, password: str, db: Session, user_agent: str | None = None, ip_address: str | None = None) -> models.Token:
     user = authenticate_user(email, password, db)
@@ -157,7 +146,6 @@ def login_user(email: str, password: str, db: Session, user_agent: str | None = 
         refresh_token=refresh_token,
         session_id=auth_session.id,
     )
-
 
 def refresh_access_token(refresh_token: str, db: Session) -> models.Token:
     token_data = verify_token(refresh_token, expected_type="refresh")
@@ -197,13 +185,11 @@ def refresh_access_token(refresh_token: str, db: Session) -> models.Token:
         session_id=session.id,
     )
 
-
 def logout_session(session_id: UUID, db: Session) -> None:
     session = db.query(AuthSession).filter(AuthSession.id == session_id).first()
     if session and session.revoked_at is None:
         session.revoked_at = _now()
         db.commit()
-
 
 def logout_user(current_token_data: models.TokenData | None, db: Session, refresh_token: str | None = None) -> None:
     if refresh_token:
@@ -217,7 +203,6 @@ def logout_user(current_token_data: models.TokenData | None, db: Session, refres
     if not session_id:
         raise AuthenticationError("Invalid session")
     logout_session(session_id, db)
-
 
 def get_current_user(token: Annotated[str, Depends(oauth2_bearer)], db: DbSession) -> models.TokenData:
     token_data = verify_token(token, expected_type="access")
@@ -236,17 +221,14 @@ def get_current_user(token: Annotated[str, Depends(oauth2_bearer)], db: DbSessio
 
     return token_data
 
-
 CurrentUser = Annotated[models.TokenData, Depends(get_current_user)]
 RawToken = Annotated[str, Depends(oauth2_bearer)]
-
 
 def get_user_profile(user_id: UUID, db: Session) -> User:
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise UserNotFoundError(user_id)
     return user
-
 
 def change_password(db: Session, user_id: UUID, payload: models.ChangePasswordRequest) -> None:
     user = get_user_profile(user_id, db)
@@ -256,7 +238,6 @@ def change_password(db: Session, user_id: UUID, payload: models.ChangePasswordRe
         raise AuthenticationError("Xác nhận mật khẩu mới không khớp")
     user.password_hash = get_password_hash(payload.new_password)
     db.commit()
-
 
 def list_active_sessions(db: Session, user_id: UUID) -> list[AuthSession]:
     return (
@@ -270,7 +251,6 @@ def list_active_sessions(db: Session, user_id: UUID) -> list[AuthSession]:
         .all()
     )
 
-
 def revoke_one_session(db: Session, user_id: UUID, session_id: UUID) -> None:
     session = db.query(AuthSession).filter(AuthSession.id == session_id, AuthSession.user_id == user_id).first()
     if not session:
@@ -279,14 +259,12 @@ def revoke_one_session(db: Session, user_id: UUID, session_id: UUID) -> None:
         session.revoked_at = _now()
         db.commit()
 
-
 def revoke_all_sessions(db: Session, user_id: UUID) -> int:
     sessions = db.query(AuthSession).filter(AuthSession.user_id == user_id, AuthSession.revoked_at.is_(None)).all()
     for session in sessions:
         session.revoked_at = _now()
     db.commit()
     return len(sessions)
-
 
 def create_password_reset_request(db: Session, payload: models.PasswordResetRequest) -> None:
     user = db.query(User).filter(User.email == payload.email).first()
@@ -337,7 +315,6 @@ def create_password_reset_request(db: Session, payload: models.PasswordResetRequ
     except Exception as exc:
         logging.error("Failed to send reset password email: %s", str(exc))
         raise AuthenticationError("Khong the gui email reset password")
-
 
 def confirm_password_reset(db: Session, payload: models.PasswordResetConfirmRequest) -> None:
     if payload.new_password != payload.new_password_confirm:
