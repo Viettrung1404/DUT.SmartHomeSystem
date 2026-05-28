@@ -31,6 +31,7 @@ from src.config.env import (
     MQTT_COMMAND_TOPIC,
     MQTT_USE_TLS,
 )
+from src.services.activity_logger import record_device_power_transition
 
 _mqtt_client: mqtt.Client | None = None
 _db_session_factory = None
@@ -58,6 +59,10 @@ _LEGACY_METADATA_KEYS = [
     "den_ngu",
     "quat_khach",
     "quat_ngu",
+    "position",
+    "angle",
+    "rain_servo_position",
+    "rain_servo_angle",
 ]
 
 
@@ -129,13 +134,45 @@ def _room_alias(room) -> str:
 
 
 def _device_text(device) -> str:
+    config = getattr(device, "config", None)
+    config_text = ""
+    if isinstance(config, dict):
+        config_text = " ".join(str(value or "") for value in config.values())
     return " ".join(
         str(part or "").lower()
         for part in (
             getattr(device, "name", ""),
             getattr(device, "slug", ""),
             _enum_value(getattr(device, "type", "")),
+            config_text,
         )
+    )
+
+
+def _device_kind(device) -> str:
+    config = getattr(device, "config", None)
+    if isinstance(config, dict):
+        for key in ("kind", "device_kind", "ui_type", "control_type"):
+            value = str(config.get(key) or "").strip().lower()
+            if value:
+                return value
+    return _enum_value(getattr(device, "type", ""))
+
+
+def _is_rain_servo_device(device) -> bool:
+    kind = _device_kind(device)
+    text = _device_text(device)
+    return (
+        kind in {"rain_servo", "sky_window", "roof_window", "window_servo"}
+        or "rain_servo" in text
+        or "servo" in text
+        or "che mua" in text
+        or "che mưa" in text
+        or "mai che" in text
+        or "mái che" in text
+        or "cua so troi" in text
+        or "cửa sổ trời" in text
+        or "sky window" in text
     )
 
 
@@ -157,18 +194,30 @@ def _merge_status_payload(existing_state: dict | None, payload: dict) -> dict:
 
 def _set_device_state(db, device, payload: dict, online: bool | None = None) -> tuple[bool, dict]:
     from sqlalchemy.orm.attributes import flag_modified
-    from src.entities.models import DeviceState
+    from src.entities.models import DeviceState, TriggerSource
 
     if device.state is None:
         device.state = DeviceState(device_id=device.id, is_online=False, state={})
         db.add(device.state)
 
+    old_state = dict(device.state.state or {})
     if online is None:
         online = bool(payload.get("online", True))
     device.state.is_online = online
     device.state.last_updated = datetime.now(timezone.utc)
-    device.state.state = _merge_status_payload(device.state.state, payload)
+    state = _merge_status_payload(device.state.state, payload)
+    if _is_rain_servo_device(device):
+        state.pop("door", None)
+        state.pop("isLocked", None)
+    device.state.state = state
     flag_modified(device.state, "state")
+    record_device_power_transition(
+        db,
+        device=device,
+        old_state=old_state,
+        new_state=state,
+        trigger_source=TriggerSource.PHYSICAL_ATTRIBUTED,
+    )
     return online, device.state.state
 
 
@@ -219,12 +268,23 @@ def _handle_device_status(device_id_str: str, payload: dict):
 
 
 def _legacy_payload_for_device(device, room, payload: dict) -> dict:
-    device_type = _enum_value(device.type)
+    device_type = _device_kind(device)
     room_key = _room_alias(room)
     text = _device_text(device)
     device_payload = {"online": True}
 
-    if device_type == "light" and room_key:
+    if _is_rain_servo_device(device):
+        metadata = {}
+        if "rain_servo_position" in payload:
+            metadata["position"] = payload["rain_servo_position"]
+        if "rain_servo_angle" in payload:
+            metadata["angle"] = payload["rain_servo_angle"]
+        if "rain_detected" in payload:
+            metadata["rain_detected"] = bool(payload["rain_detected"])
+        if metadata:
+            device_payload["status"] = True
+            device_payload["metadata"] = metadata
+    elif device_type == "light" and room_key:
         value = payload.get(f"den_{room_key}")
         if value is not None:
             is_on = str(value).strip().lower() == "on"
@@ -408,7 +468,7 @@ def publish_command(command: str) -> None:
 
 
 def _legacy_command_for_device(device, room, command: str, value=None) -> tuple[str | None, str | None]:
-    device_type = _enum_value(device.type)
+    device_type = _device_kind(device)
     room_key = _room_alias(room)
     cmd = str(command or "").strip().lower()
     text = _device_text(device)
@@ -417,7 +477,20 @@ def _legacy_command_for_device(device, room, command: str, value=None) -> tuple[
     if cmd == "toggle" and isinstance(value, bool):
         cmd = "turn_on" if value else "turn_off"
 
-    if device_type == "light" and room_key:
+    if _is_rain_servo_device(device):
+        if cmd in {"open", "turn_on", "on"}:
+            return "rain servo open", home_id
+        if cmd in {"close", "turn_off", "off"}:
+            return "rain servo close", home_id
+        if cmd in {"set_position", "set_weather"}:
+            position = str(value or "").strip().lower()
+            if position in {"wet", "rain", "open"}:
+                return "rain servo open", home_id
+            if position in {"dry", "clear", "close", "closed"}:
+                return "rain servo close", home_id
+        if cmd in {"set_angle", "angle"} and value is not None:
+            return f"rain servo angle {value}", home_id
+    elif device_type == "light" and room_key:
         if cmd in {"turn_on", "on"}:
             return f"den {room_key} on", home_id
         if cmd in {"turn_off", "off"}:

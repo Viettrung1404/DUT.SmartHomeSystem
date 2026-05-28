@@ -40,6 +40,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
+from dotenv import load_dotenv
 
 import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
@@ -50,7 +51,9 @@ from src.entities.models import (
     DeviceType, UserRole, EventType, TriggerSource, MetricType,
 )
 
-DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/smarthome")
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
+
+DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:123456@localhost:5432/smarthome")
 try:
     TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 except ZoneInfoNotFoundError:

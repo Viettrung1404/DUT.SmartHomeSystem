@@ -1,4 +1,4 @@
-from src.entities.models import Device, DeviceLog, Room, HomeUser
+from src.entities.models import Device, DeviceLog, Room, HomeUser, TriggerSource
 
 from uuid import UUID, uuid4
 from datetime import datetime, timezone
@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from src.exceptions import DeviceNotFoundError, DeviceOfflineError, ForbiddenError, RoomNotFoundError
 from src.mqtt_client import publish_device_command
+from src.services.activity_logger import record_device_power_transition
 from . import models
 import logging
 
@@ -68,12 +69,20 @@ def toggle_device(db: Session, device_id: UUID, user_id: UUID, data: models.Devi
     if not device.state or not device.state.is_online:
         raise DeviceOfflineError(device_id)
 
-    if device.state is None:
-        device.state = DeviceState(device_id=device.id, is_online=True, state={})
-
+    old_state = dict(device.state.state or {})
     device.state.state["power"] = "ON" if data.status else "OFF"
     device.state.last_updated = datetime.now(timezone.utc)
     flag_modified(device.state, "state")
+    room = db.query(Room).filter(Room.id == device.room_id).first()
+    record_device_power_transition(
+        db,
+        device=device,
+        old_state=old_state,
+        new_state=device.state.state,
+        trigger_source=TriggerSource.USER,
+        user_id=user_id,
+        home_id=room.home_id if room else None,
+    )
 
     # Log action
     log = DeviceLog(id=uuid4(), device_id=device.id, action='toggle', value=str(data.status))
@@ -83,7 +92,7 @@ def toggle_device(db: Session, device_id: UUID, user_id: UUID, data: models.Devi
 
     # Publish MQTT command using explicit device-aware verbs
     try:
-        device_type = str(device.type).lower()
+        device_type = str(getattr(device.type, "value", device.type)).lower()
         if device_type in {"lock", "door", "curtain"}:
             command = "open" if data.status else "close"
             publish_device_command(str(device_id), command)
@@ -102,7 +111,8 @@ def send_command(db: Session, device_id: UUID, user_id: UUID, data: models.Devic
         raise DeviceOfflineError(device_id)
 
     # Update metadata based on command
-    metadata = device.state.state or {}
+    old_state = dict(device.state.state or {})
+    metadata = dict(device.state.state or {})
     if data.command == 'set_brightness':
         metadata['brightness'] = data.value
     elif data.command == 'set_temperature':
@@ -111,10 +121,29 @@ def send_command(db: Session, device_id: UUID, user_id: UUID, data: models.Devic
         metadata['mode'] = data.value
     elif data.command in ('lock', 'unlock'):
         metadata['isLocked'] = data.command == 'lock'
+        metadata['power'] = 'OFF' if data.command == 'lock' else 'ON'
+    elif data.command == 'set_position':
+        metadata['position'] = data.value
+    elif data.command == 'set_angle':
+        metadata['angle'] = data.value
+    elif data.command in ('turn_on', 'on', 'open', 'unlock'):
+        metadata['power'] = 'ON'
+    elif data.command in ('turn_off', 'off', 'close', 'lock'):
+        metadata['power'] = 'OFF'
 
     device.state.state = metadata
     device.state.last_updated = datetime.now(timezone.utc)
     flag_modified(device.state, "state")
+    room = db.query(Room).filter(Room.id == device.room_id).first()
+    record_device_power_transition(
+        db,
+        device=device,
+        old_state=old_state,
+        new_state=metadata,
+        trigger_source=TriggerSource.USER,
+        user_id=user_id,
+        home_id=room.home_id if room else None,
+    )
 
     # Log
     log = DeviceLog(id=uuid4(), device_id=device.id, action=data.command, value=str(data.value))
@@ -167,7 +196,7 @@ def to_response(device: Device) -> models.DeviceResponse:
     status_bool = False
     is_online = False
     last_seen = None
-    meta = device.config or {}
+    meta = dict(device.config or {})
     
     if state:
         is_online = state.is_online
@@ -175,11 +204,15 @@ def to_response(device: Device) -> models.DeviceResponse:
         last_seen = state.last_updated
         meta.update(state.state)
 
+    if isinstance(meta, dict) and meta.get("kind") == "rain_servo":
+        meta.pop("door", None)
+        meta.pop("isLocked", None)
+
     return models.DeviceResponse(
         id=str(device.id),
         room_id=str(device.room_id),
         name=device.name,
-        type=device.type,
+        type=meta.get("kind") if isinstance(meta, dict) and meta.get("kind") else device.type,
         status=status_bool,
         online_status=is_online,
         last_seen=last_seen,

@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo
 import numpy as np
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
+from dotenv import load_dotenv
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from src.entities.models import (
@@ -24,7 +25,9 @@ from src.entities.models import (
     EventType, TriggerSource, PatternType,
 )
 
-DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/smarthome")
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+
+DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:123456@localhost:5432/smarthome")
 TZ     = ZoneInfo("Asia/Ho_Chi_Minh")
 ANALYTICS_CONFIG_PATH = Path(__file__).with_name("analytics_best_config.json")
 

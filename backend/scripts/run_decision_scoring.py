@@ -22,11 +22,14 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
+from dotenv import load_dotenv
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from src.apis.suggestions.service import SuggestionService
 
-DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/smarthome")
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+
+DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:123456@localhost:5432/smarthome")
 TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 
@@ -84,8 +87,8 @@ def anomaly_severity(pattern_type: str, pattern_data: dict) -> float:
         return 0.2
 
     occ = float(pattern_data.get("occurrences", 1))
-    threshold = float(pattern_data.get("threshold", 0) or 0)
-    avg = float(pattern_data.get("avg_dur", 0) or 0)
+    threshold = float(pattern_data.get("threshold_min", pattern_data.get("threshold", 0)) or 0)
+    avg = float(pattern_data.get("avg_dur_min", pattern_data.get("avg_dur", 0)) or 0)
 
     occ_score = clamp01(occ / 5.0)
     ratio_score = clamp01((threshold / max(avg, 1.0)) / 3.0) if avg > 0 else 0.6

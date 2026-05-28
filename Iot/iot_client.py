@@ -106,6 +106,8 @@ DOOR_PIN = int(os.getenv("DOOR_PIN", "17"))
 DOOR_OPEN_SECONDS = float(os.getenv("DOOR_OPEN_SECONDS", "3"))
 DOOR_OPEN_ANGLE = float(os.getenv("DOOR_OPEN_ANGLE", "130"))
 DOOR_CLOSE_ANGLE = float(os.getenv("DOOR_CLOSE_ANGLE", "0"))
+DOOR_SERVO_HOLD_SECONDS = float(os.getenv("DOOR_SERVO_HOLD_SECONDS", "1.2"))
+DOOR_SERVO_RELEASE_AFTER_MOVE = os.getenv("DOOR_SERVO_RELEASE_AFTER_MOVE", "1").strip().lower() in {"1", "true", "yes", "on"}
 SERVO_MIN_DUTY = float(os.getenv("SERVO_MIN_DUTY", "2.5"))
 SERVO_MAX_DUTY = float(os.getenv("SERVO_MAX_DUTY", "12.5"))
 SERVO_FREQUENCY = float(os.getenv("SERVO_FREQUENCY", "50"))
@@ -768,13 +770,25 @@ def set_rain_servo_angle(angle, hold_seconds=None):
     log("rain_servo: set {} deg (manual)".format(angle))
 
 
-def set_door_angle(angle, hold_seconds=0.5):
+def set_door_angle(angle, hold_seconds=None):
+    if hold_seconds is None:
+        hold_seconds = DOOR_SERVO_HOLD_SECONDS
     if GPIO is None or door_pwm is None:
         return
     duty = angle_to_duty(angle)
+    log(
+        "door_servo: pin={} angle={} duty={:.2f} hold={} release={}".format(
+            DOOR_PIN,
+            angle,
+            duty,
+            hold_seconds,
+            DOOR_SERVO_RELEASE_AFTER_MOVE,
+        )
+    )
     door_pwm.ChangeDutyCycle(duty)
     time.sleep(hold_seconds)
-    door_pwm.ChangeDutyCycle(0)
+    if DOOR_SERVO_RELEASE_AFTER_MOVE:
+        door_pwm.ChangeDutyCycle(0)
 
 
 def close_door():
@@ -814,6 +828,8 @@ def publish_status(client):
         "flame_detected": state["flame_detected"],
         "buzzer": state["buzzer"],
         "rain_detected": state["rain_detected"],
+        "rain_servo_position": state["rain_servo_position"],
+        "rain_servo_angle": state["rain_servo_angle"],
         "door": state["door"],
         "timestamp": int(time.time()),
     }
@@ -831,6 +847,8 @@ def publish_sensors(client):
         "flame_detected": state["flame_detected"],
         "buzzer": state["buzzer"],
         "rain_detected": state["rain_detected"],
+        "rain_servo_position": state["rain_servo_position"],
+        "rain_servo_angle": state["rain_servo_angle"],
         "timestamp": int(time.time()),
     }
     # Sensors are published on legacy topic only for now.
@@ -1068,6 +1086,38 @@ def apply_command(command):
         else:
             close_door()
         return
+
+    if cmd in {
+        "rain servo open",
+        "rain_servo open",
+        "rainservo open",
+        "sky window open",
+        "roof window open",
+        "cua so troi open",
+        "mai che open",
+    }:
+        set_rain_servo_by_weather(True)
+        return
+
+    if cmd in {
+        "rain servo close",
+        "rain_servo close",
+        "rainservo close",
+        "sky window close",
+        "roof window close",
+        "cua so troi close",
+        "mai che close",
+    }:
+        set_rain_servo_by_weather(False)
+        return
+
+    for prefix in ("rain servo angle ", "rain_servo angle ", "rainservo angle "):
+        if cmd.startswith(prefix):
+            try:
+                set_rain_servo_angle(float(cmd[len(prefix):].strip()))
+            except ValueError:
+                log("rain_servo: invalid angle command '{}'".format(command))
+            return
 
     if cmd == "status":
         return

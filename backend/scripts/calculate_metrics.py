@@ -3,13 +3,16 @@ import sys
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Add project root to sys.path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from src.apis.suggestions.service import SuggestionService
 
-DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/smarthome")
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+
+DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:123456@localhost:5432/smarthome")
 
 def main():
     engine = create_engine(DB_URL)

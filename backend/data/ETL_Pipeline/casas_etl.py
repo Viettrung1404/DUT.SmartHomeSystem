@@ -27,6 +27,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
+from dotenv import load_dotenv
 
 # Add backend root to path so we can import src.entities.models
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
@@ -47,7 +48,9 @@ from src.entities.models import (
     UserRole,
 )
 
-DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/smarthome")
+load_dotenv(BACKEND_ROOT / ".env")
+
+DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:123456@localhost:5432/smarthome")
 DEFAULT_TZ = "Asia/Ho_Chi_Minh"
 
 

@@ -24,11 +24,14 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
+from dotenv import load_dotenv
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from src.entities.models import SuggestionLog, ActionType
 
-DB_URL        = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/smarthome")
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+
+DB_URL        = os.getenv("DATABASE_URL", "postgresql://postgres:123456@localhost:5432/smarthome")
 LLM_PROVIDER  = os.getenv("LLM_PROVIDER",  "ollama")   # "ollama" | "claude"
 OLLAMA_URL    = os.getenv("OLLAMA_URL",     "http://localhost:11434")
 OLLAMA_MODEL  = os.getenv("OLLAMA_MODEL",   "qwen2.5:3b")
