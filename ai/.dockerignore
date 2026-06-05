@@ -1,0 +1,72 @@
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Documentation
+docs/_build/
+*.md
+!README.md
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Logs (keep structure, ignore content)
+logs/*.log
+logs/*.txt
+
+# Models (will be mounted as volume)
+models/*.pt
+models/*.onnx
+models/*.bin
+
+# Data (will be mounted as volume)
+data/raw/*
+data/processed/*
+data/augmented/*
+!data/**/.gitkeep
+
+# Development scripts
+run_dev.sh
+run_dev.bat
+scripts/
+
+# Environment files (use .env.example instead)
+.env
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# OS files
+Thumbs.db

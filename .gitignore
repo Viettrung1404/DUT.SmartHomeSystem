@@ -127,3 +127,9 @@ Desktop.ini
 logs/
 *.log
 log.txt
+
+.kiro/
+
+.hypothesis
+
+ai/models

@@ -1,0 +1,54 @@
+# Core FastAPI dependencies
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+python-multipart==0.0.6
+
+# ML and NLP dependencies
+transformers==4.35.2
+torch==2.1.1
+tokenizers==0.15.0
+numpy==1.26.4
+
+# Testing dependencies
+hypothesis==6.92.1
+pytest==7.4.3
+pytest-cov==4.1.0
+pytest-asyncio==0.21.1
+httpx==0.25.2
+
+# Authentication and security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+PyJWT==2.8.0
+
+# Database dependencies
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9
+alembic==1.12.1
+
+# Caching and message queue
+redis==5.0.1
+hiredis==2.2.3
+
+# Monitoring and logging
+prometheus-client==0.19.0
+structlog==23.2.0
+python-json-logger==2.0.7
+
+# Utilities
+python-dotenv==1.0.0
+pyyaml==6.0.1
+requests==2.31.0
+aiofiles==23.2.1
+
+# ONNX Runtime for model optimization (optional)
+onnxruntime==1.16.3
+# onnxruntime-gpu==1.16.3  # Uncomment for GPU support
+
+# Development dependencies (optional)
+black==23.11.0
+flake8==6.1.0
+mypy==1.7.1
+isort==5.12.0

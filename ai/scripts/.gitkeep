@@ -1,0 +1,5 @@
+# This directory will contain utility scripts
+# train_model.py - Model training script
+# evaluate.py - Model evaluation script
+# export_onnx.py - ONNX export script
+# prepare_dataset.py - Dataset preparation script

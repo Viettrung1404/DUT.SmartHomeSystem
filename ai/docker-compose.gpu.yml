@@ -1,0 +1,129 @@
+version: '3.8'
+
+services:
+  nlp-server-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    container_name: vietnamese-nlp-server-gpu
+    ports:
+      - "8001:8001"
+    environment:
+      - API_HOST=0.0.0.0
+      - API_PORT=8001
+      - DATABASE_URL=postgresql://nlp_user:nlp_password@postgres:5432/nlp_db
+      - REDIS_URL=redis://redis:6379/0
+      - LOG_LEVEL=INFO
+      - WORKERS=1
+      - CUDA_VISIBLE_DEVICES=0
+      - USE_GPU=true
+    env_file:
+      - .env
+    volumes:
+      - ./models:/app/models:ro  # Read-only for security
+      - ./logs:/app/logs
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - nlp-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # GPU configuration
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+        reservations:
+          cpus: '2.0'
+          memory: 4G
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: nlp-postgres
+    environment:
+      - POSTGRES_USER=nlp_user
+      - POSTGRES_PASSWORD=nlp_password
+      - POSTGRES_DB=nlp_db
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - nlp-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nlp_user -d nlp_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  redis:
+    image: redis:7-alpine
+    container_name: nlp-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    networks:
+      - nlp-network
+    # Redis configuration: 
+    # - appendonly: persistence enabled
+    # - maxmemory: 512MB limit
+    # - maxmemory-policy: LRU eviction when memory limit reached
+    # Note: Cache TTL (5 minutes for identical requests) is managed by application code
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+
+networks:
+  nlp-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
