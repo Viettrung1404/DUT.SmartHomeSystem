@@ -13,7 +13,7 @@ from src.apis.energy.controller import router as energy_router
 from src.apis.security.controller import router as security_router
 from src.apis.suggestions.controller import router as suggestions_router
 from src.apis.face.controller import router as face_router
-from src.apis.suggestions.controller import router as suggestions_router
+from src.apis.assistant.controller import router as assistant_router
 from src.websocket import ws_manager
 from src.database.core import SessionLocal
 
@@ -32,7 +32,7 @@ def register_routes(app: FastAPI):
     app.include_router(security_router)
     app.include_router(suggestions_router)
     app.include_router(face_router)
-    app.include_router(suggestions_router)
+    app.include_router(assistant_router)
 
     # WebSocket endpoint
     @app.websocket("/ws/home/{home_id}")

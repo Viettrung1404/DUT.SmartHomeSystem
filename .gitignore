@@ -144,3 +144,11 @@ backend/scripts/*.html
 
 # Ignore test results
 backend/tests/*.json
+
+# AI server generated artifacts
+ai-server/artifacts/*.joblib
+ai-server/artifacts/*_metrics.json
+ai-server/artifacts/*_model_card.md
+ai-server/artifacts/phobert_slot/
+ai-server/**/__pycache__/
+ai-server/.ipynb_checkpoints/

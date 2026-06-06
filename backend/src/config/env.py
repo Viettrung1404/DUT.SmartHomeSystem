@@ -47,3 +47,7 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL")
 SMTP_STARTTLS = os.getenv("SMTP_STARTTLS", "true").lower() == "true"
 PASSWORD_RESET_BASE_URL = os.getenv("PASSWORD_RESET_BASE_URL", f"http://{BACKEND_HOST}:{BACKEND_PORT}")
+
+# AI server
+AI_SERVER_BASE_URL = os.getenv("AI_SERVER_BASE_URL", "http://localhost:8010").rstrip("/")
+AI_ASSISTANT_ROUTE = os.getenv("AI_ASSISTANT_ROUTE", "/api/v1/assistant/chat")

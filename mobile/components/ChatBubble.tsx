@@ -9,6 +9,8 @@ export interface ChatMessage {
     text: string;
     isUser: boolean;
     timestamp: string;
+    statusTag?: 'executed' | 'skipped' | 'failed' | 'thinking';
+    statusText?: string;
 }
 
 interface ChatBubbleProps {
@@ -17,6 +19,18 @@ interface ChatBubbleProps {
 
 export function ChatBubble({ message }: ChatBubbleProps) {
     const { colors } = useTheme();
+    const statusColor = (() => {
+        switch (message.statusTag) {
+            case 'executed':
+                return colors.success;
+            case 'failed':
+                return colors.error;
+            case 'thinking':
+                return colors.primary;
+            default:
+                return colors.textTertiary;
+        }
+    })();
 
     return (
         <View
@@ -45,6 +59,19 @@ export function ChatBubble({ message }: ChatBubbleProps) {
                 >
                     {message.text}
                 </Text>
+                {message.statusText ? (
+                    <Text
+                        style={[
+                            Typography.caption,
+                            {
+                                color: message.isUser ? 'rgba(255,255,255,0.82)' : statusColor,
+                                marginTop: Spacing.xs,
+                            },
+                        ]}
+                    >
+                        {message.statusText}
+                    </Text>
+                ) : null}
             </View>
             <Text
                 style={[

@@ -453,4 +453,39 @@ export const suggestionsAPI = {
         }),
 };
 
+// ============ ASSISTANT ============
+
+export type AssistantExecutionStatus = 'executed' | 'skipped' | 'failed';
+
+export interface AssistantExecutionResult {
+    status: AssistantExecutionStatus;
+    device_id?: string | null;
+    command?: string | null;
+    value?: unknown;
+    reason?: string | null;
+}
+
+export interface AssistantChatResponse {
+    reply_text: string;
+    nlu: Record<string, any>;
+    grounding: Record<string, any>;
+    action_draft?: Record<string, any> | null;
+    follow_up_question?: string | null;
+    safety_flags: string[];
+    execution: AssistantExecutionResult;
+    home_id: string;
+}
+
+export const assistantAPI = {
+    chat: (message: string, homeId?: string, executeIfConfident = true) =>
+        apiFetch<AssistantChatResponse>('/assistant/chat', {
+            method: 'POST',
+            body: JSON.stringify({
+                message,
+                home_id: homeId,
+                execute_if_confident: executeIfConfident,
+            }),
+        }),
+};
+
 export { API_BASE_URL };

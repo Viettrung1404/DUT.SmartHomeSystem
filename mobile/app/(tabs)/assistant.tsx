@@ -1,27 +1,98 @@
-import React, { useState, useRef } from 'react';
-import { View, Text, FlatList, TextInput, Pressable, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+    FlatList,
+    KeyboardAvoidingView,
+    Platform,
+    Pressable,
+    Text,
+    TextInput,
+    View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useTheme } from '@/contexts/ThemeContext';
-import { ChatBubble, ChatMessage } from '@/components/ChatBubble';
-import { Spacing, BorderRadius } from '@/constants/theme';
-import { Typography } from '@/constants/typography';
 import { Feather } from '@expo/vector-icons';
 
+import { ChatBubble, ChatMessage } from '@/components/ChatBubble';
+import { BorderRadius, Spacing } from '@/constants/theme';
+import { Typography } from '@/constants/typography';
+import { useTheme } from '@/contexts/ThemeContext';
+import {
+    assistantAPI,
+    AssistantChatResponse,
+    homesAPI,
+} from '@/services/api';
+
 const quickCommands = [
-    'Tắt đèn phòng ngủ',
-    'Bật máy lạnh 24°C',
-    'Kích hoạt chế độ đi ngủ',
-    'Mở rèm phòng khách',
-    'Khóa tất cả cửa',
-    'Tắt tất cả thiết bị',
+    'Tat den phong ngu',
+    'Bat quat phong khach',
+    'Nhiet do phong khach bao nhieu',
+    'Co mua chua',
+    'Khoa cua chinh',
+    'Tat tat ca thiet bi',
 ];
+
+function createTimestamp() {
+    return new Date().toLocaleTimeString('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+}
+
+function describeCommand(command?: string | null) {
+    switch (command) {
+        case 'turn_on':
+            return 'bat';
+        case 'turn_off':
+            return 'tat';
+        case 'open':
+            return 'mo';
+        case 'close':
+            return 'dong';
+        case 'lock':
+            return 'khoa';
+        case 'unlock':
+            return 'mo khoa';
+        default:
+            return command || 'thuc thi';
+    }
+}
+
+function buildStatusText(response: AssistantChatResponse) {
+    const execution = response.execution;
+    const groundedDevice = typeof response.grounding?.device?.name === 'string'
+        ? response.grounding.device.name
+        : null;
+    const fallbackDevice = typeof response.action_draft?.device_name === 'string'
+        ? response.action_draft.device_name
+        : null;
+    const deviceLabel = groundedDevice || fallbackDevice;
+
+    if (execution.status === 'executed') {
+        const actionLabel = describeCommand(execution.command);
+        return deviceLabel ? `Da thuc thi: ${actionLabel} ${deviceLabel}` : 'Da gui lenh thanh cong';
+    }
+
+    if (execution.status === 'failed') {
+        return `Khong thuc thi duoc: ${execution.reason || 'Loi khong xac dinh'}`;
+    }
+
+    return `Chua thuc thi: ${execution.reason || 'Can lam ro them yeu cau'}`;
+}
+
+function buildAssistantReply(response: AssistantChatResponse) {
+    const reply = response.reply_text?.trim() || '';
+    const followUp = response.follow_up_question?.trim() || '';
+    if (reply && followUp && !reply.includes(followUp)) {
+        return `${reply}\n\n${followUp}`;
+    }
+    return reply || followUp || 'Tro ly da nhan yeu cau.';
+}
 
 const initialMessages: ChatMessage[] = [
     {
         id: 'welcome',
-        text: 'Xin chào! Tôi có thể giúp gì cho bạn?',
+        text: 'Xin chao! Toi co the giup gi cho ban?',
         isUser: false,
-        timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+        timestamp: createTimestamp(),
     },
 ];
 
@@ -29,47 +100,115 @@ export default function AssistantScreen() {
     const { colors } = useTheme();
     const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
     const [input, setInput] = useState('');
+    const [activeHomeId, setActiveHomeId] = useState<string | null>(null);
+    const [homeLoadError, setHomeLoadError] = useState<string | null>(null);
+    const [isSending, setIsSending] = useState(false);
     const flatListRef = useRef<FlatList>(null);
 
-    const sendMessage = (text: string) => {
-        if (!text.trim()) return;
-        const userMsg: ChatMessage = {
-            id: `u${Date.now()}`,
-            text: text.trim(),
-            isUser: true,
-            timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-        };
-        setMessages((prev) => [...prev, userMsg]);
-        setInput('');
+    useEffect(() => {
+        let isMounted = true;
 
-        // Simulate AI response
-        setTimeout(() => {
-            const aiMsg: ChatMessage = {
-                id: `a${Date.now()}`,
-                text: `Đã nhận lệnh: "${text.trim()}". Đang xử lý...`,
+        const loadHomes = async () => {
+            try {
+                const homes = await homesAPI.list();
+                if (!isMounted) return;
+                setActiveHomeId(homes[0]?.id ?? null);
+                if (!homes.length) {
+                    setHomeLoadError('Chua co nha nao duoc lien ket voi tai khoan nay');
+                }
+            } catch (error) {
+                if (!isMounted) return;
+                const message = error instanceof Error ? error.message : 'Khong tai duoc danh sach nha';
+                setHomeLoadError(message);
+            }
+        };
+
+        void loadHomes();
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
+
+    const replaceMessage = (messageId: string, nextMessage: ChatMessage) => {
+        setMessages((prev) => prev.map((item) => (item.id === messageId ? nextMessage : item)));
+    };
+
+    const sendMessage = async (rawText: string) => {
+        const text = rawText.trim();
+        if (!text || isSending) return;
+
+        const userMessage: ChatMessage = {
+            id: `u-${Date.now()}`,
+            text,
+            isUser: true,
+            timestamp: createTimestamp(),
+        };
+        const pendingId = `a-${Date.now()}`;
+        const pendingMessage: ChatMessage = {
+            id: pendingId,
+            text: 'Dang xu ly yeu cau...',
+            isUser: false,
+            timestamp: createTimestamp(),
+            statusTag: 'thinking',
+            statusText: 'Dang goi AI assistant',
+        };
+
+        setMessages((prev) => [...prev, userMessage, pendingMessage]);
+        setInput('');
+        setIsSending(true);
+
+        try {
+            const response = await assistantAPI.chat(text, activeHomeId ?? undefined, true);
+            replaceMessage(pendingId, {
+                id: pendingId,
+                text: buildAssistantReply(response),
                 isUser: false,
-                timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-            };
-            setMessages((prev) => [...prev, aiMsg]);
-        }, 1000);
+                timestamp: createTimestamp(),
+                statusTag: response.execution.status,
+                statusText: buildStatusText(response),
+            });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Khong gui duoc yeu cau den tro ly';
+            replaceMessage(pendingId, {
+                id: pendingId,
+                text: 'Tro ly tam thoi khong san sang. Vui long thu lai sau.',
+                isUser: false,
+                timestamp: createTimestamp(),
+                statusTag: 'failed',
+                statusText: message,
+            });
+        } finally {
+            setIsSending(false);
+        }
     };
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-            {/* Header */}
             <View style={{ padding: Spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
                     <View
                         style={{
-                            width: 40, height: 40, borderRadius: 20,
-                            backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center',
+                            width: 40,
+                            height: 40,
+                            borderRadius: 20,
+                            backgroundColor: colors.primaryLight,
+                            alignItems: 'center',
+                            justifyContent: 'center',
                         }}
                     >
                         <Feather name="cpu" size={20} color={colors.primary} />
                     </View>
-                    <View>
-                        <Text style={[Typography.h3, { color: colors.text }]}>Trợ lý AI</Text>
-                        <Text style={[Typography.caption, { color: colors.success }]}>● Đang hoạt động</Text>
+                    <View style={{ flex: 1 }}>
+                        <Text style={[Typography.h3, { color: colors.text }]}>Tro ly AI</Text>
+                        <Text
+                            style={[
+                                Typography.caption,
+                                { color: homeLoadError ? colors.warning : colors.success },
+                            ]}
+                        >
+                            {homeLoadError ? homeLoadError : 'Dang ket noi voi backend va AI server'}
+                        </Text>
                     </View>
                 </View>
             </View>
@@ -79,7 +218,6 @@ export default function AssistantScreen() {
                 style={{ flex: 1 }}
                 keyboardVerticalOffset={0}
             >
-                {/* Messages */}
                 <View style={{ flex: 1 }}>
                     <FlatList
                         ref={flatListRef}
@@ -92,7 +230,6 @@ export default function AssistantScreen() {
                     />
                 </View>
 
-                {/* Quick Commands */}
                 <View style={{ paddingVertical: Spacing.sm, backgroundColor: colors.background }}>
                     <FlatList
                         horizontal
@@ -102,25 +239,28 @@ export default function AssistantScreen() {
                         contentContainerStyle={{ paddingHorizontal: Spacing.md, gap: Spacing.sm }}
                         renderItem={({ item }) => (
                             <Pressable
-                                onPress={() => sendMessage(item)}
+                                onPress={() => void sendMessage(item)}
+                                disabled={isSending}
                                 style={{
                                     backgroundColor: colors.card,
                                     borderRadius: BorderRadius.full,
                                     paddingHorizontal: Spacing.md,
-                                    paddingVertical: 8, // Cố định padding dọc
+                                    paddingVertical: 8,
                                     borderWidth: 1,
                                     borderColor: colors.border,
-                                    justifyContent: 'center', // Đảm bảo text luôn ở giữa
-                                    height: 36, // Bạn có thể set cứng chiều cao ở đây
+                                    justifyContent: 'center',
+                                    height: 36,
+                                    opacity: isSending ? 0.7 : 1,
                                 }}
                             >
-                                <Text style={[Typography.caption, { color: colors.textSecondary }]}>{item}</Text>
+                                <Text style={[Typography.caption, { color: colors.textSecondary }]}>
+                                    {item}
+                                </Text>
                             </Pressable>
                         )}
                     />
                 </View>
 
-                {/* Input Bar */}
                 <View
                     style={{
                         flexDirection: 'row',
@@ -134,9 +274,15 @@ export default function AssistantScreen() {
                 >
                     <Pressable
                         style={{
-                            width: 40, height: 40, borderRadius: 20,
-                            backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center',
-                            borderWidth: 1, borderColor: colors.border,
+                            width: 40,
+                            height: 40,
+                            borderRadius: 20,
+                            backgroundColor: colors.surface,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            borderWidth: 1,
+                            borderColor: colors.border,
+                            opacity: 0.7,
                         }}
                     >
                         <Feather name="mic" size={18} color={colors.primary} />
@@ -144,8 +290,9 @@ export default function AssistantScreen() {
                     <TextInput
                         value={input}
                         onChangeText={setInput}
-                        placeholder="Nhập lệnh..."
+                        placeholder="Nhap lenh..."
                         placeholderTextColor={colors.textTertiary}
+                        editable={!isSending}
                         style={[
                             Typography.body,
                             {
@@ -159,14 +306,20 @@ export default function AssistantScreen() {
                                 borderColor: colors.border,
                             },
                         ]}
-                        onSubmitEditing={() => sendMessage(input)}
+                        onSubmitEditing={() => void sendMessage(input)}
                         returnKeyType="send"
                     />
                     <Pressable
-                        onPress={() => sendMessage(input)}
+                        onPress={() => void sendMessage(input)}
+                        disabled={isSending}
                         style={{
-                            width: 40, height: 40, borderRadius: 20,
-                            backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
+                            width: 40,
+                            height: 40,
+                            borderRadius: 20,
+                            backgroundColor: colors.primary,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            opacity: isSending ? 0.7 : 1,
                         }}
                     >
                         <Feather name="send" size={16} color="#FFFFFF" />

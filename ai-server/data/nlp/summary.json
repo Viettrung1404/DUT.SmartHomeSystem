@@ -1,0 +1,29 @@
+{
+  "rows": 4200,
+  "intent_counts": {
+    "control_device": 2400,
+    "environmental_comfort": 100,
+    "greeting": 100,
+    "out_of_scope": 200,
+    "query_device_status": 700,
+    "query_sensor": 700
+  },
+  "split_counts": {
+    "train": 3037,
+    "test": 513,
+    "val": 650
+  },
+  "variant_counts": {
+    "standard": 3238,
+    "asr_no_accent": 439,
+    "alias": 523
+  },
+  "core_intents": [
+    "control_device",
+    "query_sensor",
+    "query_device_status",
+    "environmental_comfort",
+    "greeting",
+    "out_of_scope"
+  ]
+}
