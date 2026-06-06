@@ -418,6 +418,28 @@ export const securityAPI = {
         apiFetch<SecurityEventResponse[]>(`/security/events?home_id=${homeId}&limit=${limit}`),
 };
 
+// ============ FACE ============
+
+export interface FaceEnrollBatchResponse {
+    saved_count: number;
+    deleted_count: number;
+    person_id: string;
+    image_paths: string[];
+    reason?: string | null;
+}
+
+export const faceAPI = {
+    enrollBatch: (homeId: string, personId: string, imagesBase64: string[]) =>
+        apiFetch<FaceEnrollBatchResponse>('/face/enroll/batch', {
+            method: 'POST',
+            body: JSON.stringify({
+                home_id: homeId,
+                person_id: personId,
+                images_base64: imagesBase64,
+            }),
+        }),
+};
+
 // ============ SUGGESTIONS ============
 
 export interface SuggestionResponse {

@@ -18,3 +18,8 @@ numpy
 scikit-learn
 pandas
 httpx
+
+# Face recognition extras (merged from requirements-face.txt)
+insightface
+onnxruntime
+opencv-python-headless

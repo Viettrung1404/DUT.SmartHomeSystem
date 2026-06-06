@@ -8,10 +8,13 @@ services:
       - "8000:8000"
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/smarthome
+      - FACE_GALLERY_DIR=/app/data/face_gallery
+      - FACE_LAST_IMAGE_PATH=/app/data/face_last.jpg
     depends_on:
       - db
     volumes:
       - ./backend/src:/app/src
+      - ./backend/data:/app/data
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
     networks:
       - app-network

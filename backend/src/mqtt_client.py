@@ -429,14 +429,13 @@ def _handle_face_image(home_id: str, payload: dict):
             return
 
         verified, match_id, confidence, reason = verify_face_image_for_home(home_id, image_base64)
-        logging.info(
-            "MQTT face verify from %s verified=%s match_id=%s confidence=%s reason=%s",
-            home_id,
-            verified,
-            match_id,
-            confidence,
-            reason,
-        )
+        confidence_percent = round(confidence * 100, 1) if confidence is not None else None
+        log_msg = f"MQTT face verify from {home_id}: verified={verified}"
+        if verified:
+            log_msg += f" match_id={match_id} match_percent={confidence_percent}%"
+        else:
+            log_msg += f" match_percent={confidence_percent}% reason={reason}"
+        logging.info(log_msg)
         if verified and door_device_id:
             publish_device_command(door_device_id, "open", None)
         elif verified:
