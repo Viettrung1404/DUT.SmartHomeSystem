@@ -8,10 +8,12 @@ import { Button } from '@/components/ui/Button';
 import { Spacing, BorderRadius } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
 import { Feather } from '@expo/vector-icons';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function RegisterScreen() {
     const { colors } = useTheme();
     const router = useRouter();
+    const { register } = useAuth();
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -19,7 +21,7 @@ export default function RegisterScreen() {
     const [loading, setLoading] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
 
-    const handleRegister = () => {
+    const handleRegister = async () => {
         const newErrors: Record<string, string> = {};
         if (!name) newErrors.name = 'Vui lòng nhập họ tên';
         if (!email) newErrors.email = 'Vui lòng nhập email';
@@ -31,11 +33,18 @@ export default function RegisterScreen() {
         setErrors(newErrors);
         if (Object.keys(newErrors).length > 0) return;
 
-        setLoading(true);
-        setTimeout(() => {
-            setLoading(false);
+        try {
+            setLoading(true);
+            await register(email.trim(), name.trim(), password);
             router.replace('/(tabs)');
-        }, 1500);
+        } catch (error: any) {
+            setErrors((prev) => ({
+                ...prev,
+                email: error?.message || 'Đăng ký thất bại',
+            }));
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (

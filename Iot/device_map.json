@@ -1,0 +1,66 @@
+[
+    {
+        "id": "d107b36e-9576-4ab4-877e-8facd4dd2a29",
+        "kind": "light",
+        "room": "khach",
+        "name": "Living light"
+    },
+    {
+        "id": "8000d19f-46ee-4271-80b4-1168d1b1834e",
+        "kind": "light",
+        "room": "ngu",
+        "name": "Bedroom light"
+    },
+    {
+        "id": "eb2dc712-7b4f-4c82-acf2-e88fa0352797",
+        "kind": "fan",
+        "room": "ngu",
+        "name": "Bedroom fan"
+    },
+    {
+        "id": "e3896e00-1c28-4d8b-98ae-17f4bb501e4f",
+        "kind": "fan",
+        "room": "khach",
+        "name": "Living fan"
+    },
+    {
+        "id": "097527ff-2aed-4d01-94ce-1642f36abee2",
+        "kind": "door",
+        "name": "Door"
+    },
+    {
+        "id": "66666666-6666-6666-6666-666666666666",
+        "kind": "buzzer",
+        "name": "Buzzer"
+    },
+    {
+        "id": "3a9b486f-8cb0-4cdd-b992-dfb36029b89a",
+        "kind": "distance_light",
+        "name": "Distance light"
+    },
+    {
+        "id": "e9e84c5d-ef0b-4f6d-88c4-4afc1f401993",
+        "kind": "temperature_humidity",
+        "name": "Temp/Humidity"
+    },
+    {
+        "id": "065dcd9c-7b1e-40f8-a1f0-ff1301dd9d3a",
+        "kind": "distance_sensor",
+        "name": "Ultrasonic sensor"
+    },
+    {
+        "id": "9cc4a587-e51d-42c4-9e17-9c00f461e89c",
+        "kind": "gas_sensor",
+        "name": "Gas sensor"
+    },
+    {
+        "id": "7e82eef7-ae95-4de8-a267-1a7e2d505008",
+        "kind": "rain_sensor",
+        "name": "Rain sensor"
+    },
+    {
+        "id": "0466f4fe-76d2-4b63-9ab3-26ba52daa3a3",
+        "kind": "rain_servo",
+        "name": "Rain servo"
+    }
+]

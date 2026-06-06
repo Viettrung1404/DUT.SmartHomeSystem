@@ -27,8 +27,7 @@ def check_time_automations():
     if not _db_session_factory:
         return
 
-    from src.entities.automation import Automation, AutomationCondition, AutomationAction
-    from src.entities.device import Device
+    from src.entities.models import Automation, AutomationCondition, AutomationAction, Device, DeviceState
     from src.mqtt_client import publish_device_command
 
     db = _db_session_factory()
@@ -53,22 +52,45 @@ def check_time_automations():
                     try:
                         if action.device_id:
                             device = db.query(Device).filter(Device.id == action.device_id).first()
-                            if device and device.online_status:
-                                publish_device_command(str(device.id), action.action, action.value)
+                            if device and device.state and device.state.is_online:
+                                command = action.action
+                                value = action.value
+                                if command == 'toggle':
+                                    is_on = False
+                                    if isinstance(value, bool):
+                                        is_on = value
+                                    elif isinstance(value, str):
+                                        is_on = value.strip().lower() in {'on', 'true', '1'}
+
+                                    device_type = str(device.type).lower()
+                                    if device_type in {'lock', 'door', 'curtain'}:
+                                        command = 'open' if is_on else 'close'
+                                        value = None
+                                    else:
+                                        command = 'turn_on' if is_on else 'turn_off'
+                                        value = None
+
+                                publish_device_command(str(device.id), command, value)
 
                                 # Update device in DB
+                                if not device.state:
+                                    device.state = DeviceState(device_id=device.id, state={}, is_online=True)
+                                
+                                state_dict = dict(device.state.state) if device.state.state else {}
                                 if action.action == 'toggle':
-                                    device.status = action.value == 'on' or action.value == 'True'
+                                    state_dict['power'] = 'ON' if is_on else 'OFF'
                                 elif action.action in ('set_brightness', 'set_temperature', 'set_mode'):
-                                    metadata = device.metadata_json or {}
                                     key_map = {
                                         'set_brightness': 'brightness',
                                         'set_temperature': 'targetTemp',
                                         'set_mode': 'mode',
                                     }
-                                    metadata[key_map[action.action]] = action.value
-                                    device.metadata_json = metadata
-                                device.last_seen = now
+                                    state_dict[key_map[action.action]] = action.value
+                                
+                                device.state.state = state_dict
+                                from sqlalchemy.orm.attributes import flag_modified
+                                flag_modified(device.state, "state")
+                                device.state.last_updated = now
                     except Exception as e:
                         logging.error(f"Automation action failed: {e}")
 

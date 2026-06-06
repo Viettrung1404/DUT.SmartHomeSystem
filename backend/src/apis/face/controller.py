@@ -7,8 +7,8 @@ from starlette import status
 from . import models
 from . import service
 from ...rate_limiter import limiter
-from ...mqtt_client import publish_command
-from ...config.env import DOOR_OPEN_COMMAND, FACE_LAST_IMAGE_PATH
+from ...mqtt_client import publish_device_command
+from ...config.env import FACE_LAST_IMAGE_PATH
 
 router = APIRouter(
     prefix="/face",
@@ -19,9 +19,10 @@ router = APIRouter(
 @router.post("/verify", response_model=models.FaceVerifyResponse, status_code=status.HTTP_200_OK)
 @limiter.limit("60/minute")
 async def verify_face(request: Request, payload: models.FaceVerifyRequest):
-    verified, match_id, confidence, reason = service.verify_face_image(payload.image_base64)
+    verified, match_id, confidence, reason = service.verify_face_image_for_home(payload.home_id, payload.image_base64)
     if verified:
-        publish_command(DOOR_OPEN_COMMAND)
+        # Phase A: target the door controller device directly via per-device command topic.
+        publish_device_command(payload.device_id, "open", None)
     return models.FaceVerifyResponse(
         verified=verified,
         match_id=match_id,
@@ -33,7 +34,7 @@ async def verify_face(request: Request, payload: models.FaceVerifyRequest):
 @router.post("/enroll", response_model=models.FaceEnrollResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("20/minute")
 async def enroll_face(request: Request, payload: models.FaceEnrollRequest):
-    saved, image_path, reason = service.enroll_face(payload.person_id, payload.image_base64)
+    saved, image_path, reason = service.enroll_face(payload.home_id, payload.person_id, payload.image_base64)
     return models.FaceEnrollResponse(
         saved=saved,
         person_id=payload.person_id,
@@ -45,7 +46,7 @@ async def enroll_face(request: Request, payload: models.FaceEnrollRequest):
 @router.post("/upload", response_model=models.FaceUploadResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("120/minute")
 async def upload_face(request: Request, payload: models.FaceUploadRequest):
-    saved, reason = service.upload_face_image(payload.image_base64)
+    saved, reason = service.upload_face_image(payload.home_id, payload.image_base64)
     return models.FaceUploadResponse(saved=saved, reason=reason)
 
 

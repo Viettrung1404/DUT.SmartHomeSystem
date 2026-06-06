@@ -12,6 +12,7 @@ venv/
 env/
 ENV/
 .venv
+.venv311
 
 # Python distribution / packaging
 .Python
@@ -127,3 +128,19 @@ Desktop.ini
 logs/
 *.log
 log.txt
+
+# Dataset imports
+backend/data/dataset/
+
+# ===========================
+# Project Specific Artifacts
+# ===========================
+# Include pre-generated results for team demo (optional, can be ignored later)
+# backend/scripts/decision_candidates*.json
+backend/scripts/*.html
+
+# DO NOT ignore the core ML configuration
+!backend/scripts/analytics_best_config.json
+
+# Ignore test results
+backend/tests/*.json

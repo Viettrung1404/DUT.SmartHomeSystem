@@ -3,7 +3,13 @@ import { View, Text } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { BorderRadius, Spacing } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
-import { ChatMessage } from '@/services/mockData';
+
+export interface ChatMessage {
+    id: string;
+    text: string;
+    isUser: boolean;
+    timestamp: string;
+}
 
 interface ChatBubbleProps {
     message: ChatMessage;

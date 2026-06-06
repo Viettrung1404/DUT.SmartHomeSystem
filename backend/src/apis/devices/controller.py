@@ -26,6 +26,17 @@ async def get_device(device_id: UUID, current_user: CurrentUser, db: DbSession):
     return service.to_response(device)
 
 
+@router.put("/{device_id}", response_model=models.DeviceResponse)
+async def update_device(device_id: UUID, current_user: CurrentUser, db: DbSession, body: models.DeviceUpdate):
+    device = service.update_device(db, device_id, current_user.get_uuid(), body)
+    return service.to_response(device)
+
+
+@router.delete("/{device_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_device(device_id: UUID, current_user: CurrentUser, db: DbSession):
+    service.delete_device(db, device_id, current_user.get_uuid())
+
+
 @router.post("/{device_id}/toggle", response_model=models.DeviceResponse)
 async def toggle_device(device_id: UUID, current_user: CurrentUser, db: DbSession, body: models.DeviceToggleRequest):
     device = service.toggle_device(db, device_id, current_user.get_uuid(), body)

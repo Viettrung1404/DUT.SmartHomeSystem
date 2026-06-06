@@ -1,12 +1,18 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, Animated } from 'react-native';
+import { View, Text, Animated, useWindowDimensions } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Card } from './ui/Card';
 import { Button } from './ui/Button';
 import { Spacing } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
 import { Feather } from '@expo/vector-icons';
-import { AIInsight } from '@/services/mockData';
+
+export interface AIInsight {
+    id: string;
+    message: string;
+    type: 'warning' | 'info' | 'suggestion';
+    icon?: string;
+}
 
 interface AIInsightCardProps {
     insight: AIInsight;
@@ -16,6 +22,12 @@ interface AIInsightCardProps {
 
 export function AIInsightCard({ insight, onAccept, onDismiss }: AIInsightCardProps) {
     const { colors } = useTheme();
+    const { width } = useWindowDimensions();
+    const scale = Math.min(1.2, Math.max(0.85, width / 375));
+    const shrink = 0.5;
+    const scaled = (value: number) => Math.round(value * scale * shrink);
+    const scaledFont = (value: number | undefined) => (typeof value === 'number' ? value * scale * shrink : value);
+    const cardWidth = Math.min(Math.round(width * 0.82 * shrink), Math.round(360 * scale * shrink));
     const glowAnim = useRef(new Animated.Value(0.4)).current;
 
     // Pulse glow effect
@@ -34,29 +46,41 @@ export function AIInsightCard({ insight, onAccept, onDismiss }: AIInsightCardPro
     const typeIcon = insight.type === 'warning' ? 'alert-triangle' : insight.type === 'suggestion' ? 'zap' : 'info';
 
     return (
-        <Card variant="ai" style={{ width: 300, marginRight: Spacing.md }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.sm }}>
+        <Card variant="ai" style={{ width: cardWidth, marginRight: scaled(Spacing.md) }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: scaled(Spacing.sm), marginBottom: scaled(Spacing.sm) }}>
                 <Animated.View
                     style={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: 16,
+                        width: scaled(32),
+                        height: scaled(32),
+                        borderRadius: scaled(16),
                         backgroundColor: colors.primary + '20',
                         alignItems: 'center',
                         justifyContent: 'center',
                         opacity: glowAnim,
                     }}
                 >
-                    <Feather name={typeIcon as any} size={16} color={colors.primary} />
+                    <Feather name={typeIcon as any} size={scaled(16)} color={colors.primary} />
                 </Animated.View>
-                <Text style={[Typography.captionMedium, { color: colors.primary }]}>Trợ lý AI</Text>
+                <Text
+                    style={[
+                        Typography.captionMedium,
+                        { color: colors.primary, fontSize: scaledFont(Typography.captionMedium.fontSize) },
+                    ]}
+                >
+                    Trợ lý AI
+                </Text>
             </View>
 
-            <Text style={[Typography.body, { color: colors.text, marginBottom: Spacing.md }]}>
+            <Text
+                style={[
+                    Typography.body,
+                    { color: colors.text, marginBottom: scaled(Spacing.md), fontSize: scaledFont(Typography.body.fontSize) },
+                ]}
+            >
                 {insight.message}
             </Text>
 
-            <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
+            <View style={{ flexDirection: 'row', gap: scaled(Spacing.sm) }}>
                 <Button
                     title="Đồng ý"
                     onPress={() => onAccept(insight.id)}

@@ -26,19 +26,30 @@ def _safe_person_id(person_id: str) -> str:
     return safe
 
 
+def _safe_home_id(home_id: str) -> str:
+    safe = "".join(ch for ch in home_id if ch.isalnum() or ch in "-_")
+    return safe
+
+
+def _home_gallery_dir(home_id: str) -> str:
+    safe_home_id = _safe_home_id(home_id)
+    if not safe_home_id:
+        raise HTTPException(status_code=400, detail="home_id is invalid")
+    return os.path.join(FACE_GALLERY_DIR, safe_home_id)
+
+
 def _save_last_image(image_bytes: bytes) -> None:
     os.makedirs(os.path.dirname(FACE_LAST_IMAGE_PATH), exist_ok=True)
     with open(FACE_LAST_IMAGE_PATH, "wb") as image_file:
         image_file.write(image_bytes)
 
 
-def enroll_face(person_id: str, image_base64: str) -> Tuple[bool, str | None, str | None]:
+def enroll_face(home_id: str, person_id: str, image_base64: str) -> Tuple[bool, str | None, str | None]:
     safe_person_id = _safe_person_id(person_id)
     if not safe_person_id:
         return False, None, "person_id is invalid"
 
-    os.makedirs(FACE_GALLERY_DIR, exist_ok=True)
-    person_dir = os.path.join(FACE_GALLERY_DIR, safe_person_id)
+    person_dir = os.path.join(_home_gallery_dir(home_id), safe_person_id)
     os.makedirs(person_dir, exist_ok=True)
 
     image_bytes = _decode_image(image_base64)
@@ -55,15 +66,19 @@ def enroll_face(person_id: str, image_base64: str) -> Tuple[bool, str | None, st
 
 
 def verify_face_image(image_base64: str) -> Tuple[bool, str | None, float | None, str | None]:
+    return False, None, None, "home_id is required"
+
+
+def verify_face_image_for_home(home_id: str, image_base64: str) -> Tuple[bool, str | None, float | None, str | None]:
     image_bytes = _decode_image(image_base64)
     _save_last_image(image_bytes)
     if not is_recognition_available():
         return False, None, None, "insightface dependency not installed"
 
-    return verify_face(image_bytes, FACE_GALLERY_DIR, FACE_MATCH_THRESHOLD)
+    return verify_face(image_bytes, _home_gallery_dir(home_id), FACE_MATCH_THRESHOLD)
 
 
-def upload_face_image(image_base64: str) -> Tuple[bool, str | None]:
+def upload_face_image(home_id: str, image_base64: str) -> Tuple[bool, str | None]:
     image_bytes = _decode_image(image_base64)
     _save_last_image(image_bytes)
     return True, None

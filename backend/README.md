@@ -19,22 +19,37 @@ I'm open to hearing your feedback about the template and what you'd like to see 
 --
 
 # Install all dependencies.
+
 - Run `pip install -r requirements-dev.txt`
 
 # Optional InsightFace dependencies.
+
 - Run `pip install -r requirements-face.txt`
 
 # How to run app. Using Docker with PostgreSQL.
+
 - Install Docker Desktop
 - Run `docker compose up --build`
 - Run `docker compose down` to stop all services
 
 # How to run locally without postgres or docker.
+
 - in database/core.py change the DATABASE_URL to sqlite
 - run `uvicorn src.main:app --reload`
+- or `uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload`
 
 # How to run tests.
+
 - Run `pytest` to run all tests
 
+# Admin accout
+
+- admin@example.com
+- Admin@123456
 
 Cheers!
+
+# User accout
+
+- demo@smarthome.com
+- 12345678

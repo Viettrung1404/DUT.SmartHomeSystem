@@ -37,7 +37,7 @@ async def delete_home(home_id: UUID, current_user: CurrentUser, db: DbSession):
     service.delete_home(db, home_id, current_user.get_uuid())
 
 
-@router.get("/{home_id}/members", response_model=list[models.HomeMemberResponse])
+@router.get("/{home_id}/members", response_model=list[models.HomeUserResponse])
 async def list_members(home_id: UUID, current_user: CurrentUser, db: DbSession):
     return service.get_home_members(db, home_id, current_user.get_uuid())
 

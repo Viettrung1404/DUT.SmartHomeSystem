@@ -1,0 +1,54 @@
+{
+  "generated_at": "2026-04-03T10:42:57.374986+00:00",
+  "feature_columns": [
+    "hour",
+    "day_of_week",
+    "is_weekend",
+    "device_id_enc",
+    "duration_seconds"
+  ],
+  "label_encoder_device": [
+    "ac_bedroom",
+    "ac_living",
+    "casas_bathroom",
+    "casas_bedroom",
+    "casas_diningroom",
+    "casas_guestroom",
+    "casas_kitchen",
+    "casas_livingroom",
+    "casas_loungechair",
+    "casas_otherroom",
+    "casas_outsidedoor",
+    "casas_workarea",
+    "fan_bedroom",
+    "fan_living",
+    "light_bedroom",
+    "light_kitchen",
+    "light_living"
+  ],
+  "label_encoder_event": [
+    "DEVICE_OFF",
+    "DEVICE_ON",
+    "FORGOT_OFF"
+  ],
+  "classification": {
+    "best_model": "LogisticRegression",
+    "best_params": {
+      "C": 0.1,
+      "solver": "lbfgs"
+    },
+    "cv_best_f1_macro": 0.5993027349364788,
+    "cv_std": 0.006213212079303535,
+    "test_accuracy": 0.8613158992905828,
+    "test_f1_macro": 0.6062335121821694
+  },
+  "clustering": {
+    "model": "DBSCAN",
+    "params": {
+      "eps": 0.3,
+      "min_samples": 5
+    },
+    "mean_score": 0.5770657376340795,
+    "std_score": 0.026636729826025128
+  }
+}

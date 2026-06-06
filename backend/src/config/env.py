@@ -21,10 +21,14 @@ FACE_DET_SIZE = os.getenv("FACE_DET_SIZE", "640,640")
 FACE_LAST_IMAGE_PATH = os.getenv("FACE_LAST_IMAGE_PATH", "data/face_last.jpg")
 
 # MQTT
-MQTT_BROKER_HOST = os.getenv("MQTT_BROKER_HOST", "test.mosquitto.org")
-MQTT_BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "1883"))
-MQTT_USERNAME = os.getenv("MQTT_USERNAME")
-MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
+MQTT_BROKER_HOST = os.getenv(
+	"MQTT_BROKER_HOST",
+	"0d847a93f8b9463487a312fdd241108a.s1.eu.hivemq.cloud"
+)
+MQTT_BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "8883"))
+MQTT_USERNAME = os.getenv("MQTT_USERNAME", "testuser")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "19122005Tri")
+MQTT_USE_TLS = os.getenv("MQTT_USE_TLS", "1").strip().lower() in {"1", "true", "yes", "on"}
 MQTT_COMMAND_TOPIC = os.getenv("MQTT_COMMAND_TOPIC", "smarthome/commands")
 DOOR_OPEN_COMMAND = os.getenv("DOOR_OPEN_COMMAND", "door open")
 
@@ -34,3 +38,12 @@ WS_PING_INTERVAL = int(os.getenv("WS_PING_INTERVAL", 30))
 # Backend URL (for mobile app)
 BACKEND_HOST = os.getenv("BACKEND_HOST", "0.0.0.0")
 BACKEND_PORT = int(os.getenv("BACKEND_PORT", "8000"))
+
+# Email / password reset
+SMTP_HOST = os.getenv("SMTP_HOST") or os.getenv("SMTP_SERVER")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USERNAME = os.getenv("SMTP_USERNAME")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL")
+SMTP_STARTTLS = os.getenv("SMTP_STARTTLS", "true").lower() == "true"
+PASSWORD_RESET_BASE_URL = os.getenv("PASSWORD_RESET_BASE_URL", f"http://{BACKEND_HOST}:{BACKEND_PORT}")

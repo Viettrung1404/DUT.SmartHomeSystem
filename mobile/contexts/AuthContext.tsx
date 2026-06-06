@@ -4,7 +4,15 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { authAPI, setTokens, clearTokens, UserResponse, LoginResponse } from '@/services/api';
+import {
+    authAPI,
+    setTokens,
+    clearTokens,
+    getAccessToken,
+    hydrateTokensFromStorage,
+    UserResponse,
+    LoginResponse,
+} from '@/services/api';
 
 interface AuthState {
     user: UserResponse | null;
@@ -28,16 +36,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading: true,
     });
 
-    // Try to load user on mount (if tokens exist)
+    // Restore tokens first so web refresh keeps the login session.
     useEffect(() => {
-        loadUser();
+        bootstrapAuth();
     }, []);
 
+    async function bootstrapAuth() {
+        await hydrateTokensFromStorage();
+        await loadUser();
+    }
+
     async function loadUser() {
+        if (!getAccessToken()) {
+            setState({ user: null, isAuthenticated: false, isLoading: false });
+            return;
+        }
+
         try {
             const user = await authAPI.me();
             setState({ user, isAuthenticated: true, isLoading: false });
         } catch {
+            clearTokens();
             setState({ user: null, isAuthenticated: false, isLoading: false });
         }
     }

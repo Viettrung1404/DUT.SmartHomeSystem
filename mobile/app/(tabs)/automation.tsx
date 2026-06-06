@@ -1,24 +1,65 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Header } from '@/components/ui/Header';
-import { AutomationCard } from '@/components/AutomationCard';
+import { AutomationCard, AutomationCardModel } from '@/components/AutomationCard';
 import { Spacing, BorderRadius } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
 import { Feather } from '@expo/vector-icons';
-import { mockAutomations } from '@/services/mockData';
+import { automationsAPI, homesAPI } from '@/services/api';
 
 export default function AutomationScreen() {
     const { colors } = useTheme();
     const router = useRouter();
-    const [automations, setAutomations] = useState(mockAutomations);
+    const [automations, setAutomations] = useState<AutomationCardModel[]>([]);
 
-    const handleToggle = (id: string, value: boolean) => {
+    useEffect(() => {
+        loadAutomations();
+    }, []);
+
+    const loadAutomations = async () => {
+        try {
+            const homes = await homesAPI.list();
+            if (!homes.length) {
+                setAutomations([]);
+                return;
+            }
+
+            const homeId = homes[0].id;
+            const response = await automationsAPI.list(homeId);
+
+            setAutomations(
+                response.map((automation) => ({
+                    id: automation.id,
+                    name: automation.name,
+                    isEnabled: automation.enabled,
+                    conditionSummary: automation.conditions.map((c) => `${c.condition_type}: ${c.value}`).join(', ') || 'Không có điều kiện',
+                    actionSummary: automation.actions.map((a) => `${a.action}${a.value ? ` (${a.value})` : ''}`).join(', ') || 'Không có hành động',
+                    icon: 'zap',
+                    lastRun: undefined,
+                })),
+            );
+        } catch (error) {
+            console.error('Failed to load automations:', error);
+            setAutomations([]);
+        }
+    };
+
+    const handleToggle = async (id: string, value: boolean) => {
         setAutomations((prev) =>
             prev.map((a) => (a.id === id ? { ...a, isEnabled: value } : a)),
         );
+
+        try {
+            await automationsAPI.update(id, { enabled: value });
+        } catch (error) {
+            console.error('Failed to update automation:', error);
+            setAutomations((prev) =>
+                prev.map((a) => (a.id === id ? { ...a, isEnabled: !value } : a)),
+            );
+        }
     };
 
     const activeCount = automations.filter((a) => a.isEnabled).length;

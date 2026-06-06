@@ -92,6 +92,18 @@ export const DarkTheme = {
   riskHigh: '#F87171',
 };
 
+// Backward-compatible palette shape used by template components/hooks.
+export const Colors = {
+  light: {
+    ...LightTheme,
+    tint: LightTheme.primary,
+  },
+  dark: {
+    ...DarkTheme,
+    tint: DarkTheme.primary,
+  },
+} as const;
+
 export type ThemeColors = typeof LightTheme | typeof DarkTheme;
 
 export const Spacing = {

@@ -7,17 +7,47 @@ import { Badge } from './ui/Badge';
 import { Spacing } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
 import { Feather } from '@expo/vector-icons';
-import { Device } from '@/services/mockData';
+
+export interface DeviceCardModel {
+    id: string;
+    name: string;
+    type: string;
+    icon?: string;
+    isOnline: boolean;
+    isOn: boolean;
+    brightness?: number;
+    temperature?: number;
+    humidity?: number;
+    battery?: number;
+    speed?: string;
+    door?: string;
+    distanceCm?: number;
+    distanceAlert?: boolean;
+    gasDetected?: boolean;
+    rainDetected?: boolean;
+    distanceLight?: string;
+    buzzer?: string;
+}
 
 interface DeviceCardProps {
-    device: Device;
+    device: DeviceCardModel;
     onToggle: (id: string, value: boolean) => void;
-    onPress: (device: Device) => void;
+    onPress: (device: DeviceCardModel) => void;
 }
 
 export function DeviceCard({ device, onToggle, onPress }: DeviceCardProps) {
     const { colors } = useTheme();
     const pulseAnim = useRef(new Animated.Value(1)).current;
+    const readOnlyTypes = new Set([
+        'temperature_humidity',
+        'distance_sensor',
+        'gas_sensor',
+        'rain_sensor',
+        'sensor',
+    ]);
+    const noToggleTypes = new Set(['door', 'rain_servo']);
+    const deviceType = device.type?.toLowerCase?.() ?? device.type;
+    const isToggleAllowed = !readOnlyTypes.has(deviceType) && !noToggleTypes.has(deviceType);
 
     // Pulse animation when status changes
     useEffect(() => {
@@ -54,12 +84,16 @@ export function DeviceCard({ device, onToggle, onPress }: DeviceCardProps) {
                             color={device.isOn ? colors.primary : colors.iconMuted}
                         />
                     </View>
-                    <Toggle
-                        value={device.isOn}
-                        onToggle={(val) => onToggle(device.id, val)}
-                        disabled={!device.isOnline}
-                        size="sm"
-                    />
+                    {isToggleAllowed && (
+                        <Toggle
+                            value={device.isOn}
+                            onToggle={(val) => {
+                                onToggle(device.id, val);
+                            }}
+                            disabled={!device.isOnline}
+                            size="sm"
+                        />
+                    )}
                 </View>
 
                 <View style={{ marginTop: Spacing.md }}>
@@ -71,6 +105,41 @@ export function DeviceCard({ device, onToggle, onPress }: DeviceCardProps) {
                         {device.brightness !== undefined && device.isOn && (
                             <Text style={[Typography.caption, { color: colors.textSecondary }]}>
                                 {device.brightness}%
+                            </Text>
+                        )}
+                        {device.speed && (
+                            <Text style={[Typography.caption, { color: colors.textSecondary }]}>
+                                Quat: {device.speed}
+                            </Text>
+                        )}
+                        {device.door && deviceType !== 'rain_servo' && (
+                            <Text style={[Typography.caption, { color: colors.textSecondary }]}>
+                                Cua: {device.door}
+                            </Text>
+                        )}
+                        {device.distanceCm !== undefined && (
+                            <Text style={[Typography.caption, { color: colors.textSecondary }]}>
+                                {device.distanceCm}cm
+                            </Text>
+                        )}
+                        {device.gasDetected !== undefined && (
+                            <Text style={[Typography.caption, { color: colors.textSecondary }]}>
+                                Gas: {device.gasDetected ? 'Co' : 'Khong'}
+                            </Text>
+                        )}
+                        {device.rainDetected !== undefined && (
+                            <Text style={[Typography.caption, { color: colors.textSecondary }]}>
+                                Mua: {device.rainDetected ? 'Co' : 'Khong'}
+                            </Text>
+                        )}
+                        {device.distanceLight && (
+                            <Text style={[Typography.caption, { color: colors.textSecondary }]}>
+                                Den: {device.distanceLight}
+                            </Text>
+                        )}
+                        {device.buzzer && (
+                            <Text style={[Typography.caption, { color: colors.textSecondary }]}>
+                                Coi: {device.buzzer}
                             </Text>
                         )}
                         {device.temperature !== undefined && (

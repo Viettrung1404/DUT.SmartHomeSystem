@@ -1,23 +1,134 @@
-import React, { useState } from 'react';
-import { View, Text, FlatList } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, FlatList, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Header } from '@/components/ui/Header';
-import { DeviceCard } from '@/components/DeviceCard';
+import { DeviceCard, DeviceCardModel } from '@/components/DeviceCard';
 import { Card } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
 import { Spacing } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
+import { devicesAPI, roomsAPI } from '@/services/api';
+import { useWebSocket } from '@/hooks/use-websocket';
 import { Feather } from '@expo/vector-icons';
-import { mockRooms, mockDevices, Device } from '@/services/mockData';
+
+function getDeviceIcon(type: string): keyof typeof Feather.glyphMap {
+    const iconMap: Record<string, keyof typeof Feather.glyphMap> = {
+        light: 'sun',
+        fan: 'wind',
+        door: 'door-open',
+        buzzer: 'bell',
+        distance_light: 'activity',
+        temperature_humidity: 'thermometer',
+        distance_sensor: 'radio',
+        gas_sensor: 'alert-triangle',
+        rain_sensor: 'cloud-rain',
+        rain_servo: 'droplet',
+    };
+    return iconMap[type] ?? 'circle';
+}
+
+function mapMetadataToDeviceFields(metadata: Record<string, any> | undefined): Partial<DeviceCardModel> {
+    return {
+        brightness: typeof metadata?.brightness === 'number' ? metadata.brightness : undefined,
+        temperature: typeof metadata?.temperature === 'number' ? metadata.temperature : undefined,
+        humidity: typeof metadata?.humidity === 'number' ? metadata.humidity : undefined,
+        battery: typeof metadata?.battery === 'number' ? metadata.battery : undefined,
+        speed: typeof metadata?.speed === 'string' ? metadata.speed : undefined,
+        door: typeof metadata?.door === 'string' ? metadata.door : undefined,
+        distanceCm: typeof metadata?.distance_cm === 'number' ? metadata.distance_cm : undefined,
+        distanceAlert:
+            typeof metadata?.distance_alert === 'boolean' ? metadata.distance_alert : undefined,
+        gasDetected:
+            typeof metadata?.gas_detected === 'boolean' ? metadata.gas_detected : undefined,
+        rainDetected:
+            typeof metadata?.rain_detected === 'boolean' ? metadata.rain_detected : undefined,
+        distanceLight:
+            typeof metadata?.distance_light === 'string' ? metadata.distance_light : undefined,
+        buzzer: typeof metadata?.buzzer === 'string' ? metadata.buzzer : undefined,
+    };
+}
 
 export default function RoomDetailScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
     const { colors } = useTheme();
     const router = useRouter();
-    const room = mockRooms.find((r) => r.id === id);
-    const [devices, setDevices] = useState<Device[]>(mockDevices[id || '1'] || []);
+    const [room, setRoom] = useState<{
+        id: string;
+        name: string;
+    } | null>(null);
+    const [homeId, setHomeId] = useState<string | null>(null);
+    const [devices, setDevices] = useState<DeviceCardModel[]>([]);
+    const [loading, setLoading] = useState(true);
+    const { subscribe } = useWebSocket(homeId);
+
+    useEffect(() => {
+        if (!id) return;
+        loadRoomData(id);
+    }, [id]);
+
+    useEffect(() => {
+        if (!homeId) return;
+        const unsubscribe = subscribe('device_update', (message) => {
+            if (!message.device_id) return;
+            setDevices((prev) =>
+                prev.map((device) => {
+                    if (device.id !== message.device_id) return device;
+                    const data = message.data ?? {};
+                    const metadata = data.metadata as Record<string, any> | undefined;
+                    return {
+                        ...device,
+                        isOn: typeof data.status === 'boolean' ? data.status : device.isOn,
+                        isOnline: typeof data.online === 'boolean' ? data.online : device.isOnline,
+                        ...mapMetadataToDeviceFields(metadata),
+                    };
+                }),
+            );
+        });
+        return unsubscribe;
+    }, [homeId, subscribe]);
+
+    const loadRoomData = async (roomId: string) => {
+        try {
+            setLoading(true);
+            const roomResponse = await roomsAPI.get(roomId);
+            setRoom({
+                id: roomResponse.id,
+                name: roomResponse.name,
+            });
+            setHomeId(roomResponse.home_id);
+
+            const deviceResponses = await devicesAPI.list(roomId);
+            setDevices(
+                deviceResponses.map((device) => {
+                    const normalizedType = device.type?.toLowerCase?.() ?? device.type;
+                    return {
+                        id: device.id,
+                        name: device.name,
+                        type: normalizedType,
+                        icon: getDeviceIcon(normalizedType),
+                        isOnline: device.online_status,
+                        isOn: device.status,
+                        ...mapMetadataToDeviceFields(device.metadata),
+                    };
+                }),
+            );
+        } catch (error) {
+            console.error('Failed to load room detail:', error);
+            setRoom(null);
+            setDevices([]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (loading) {
+        return (
+            <SafeAreaView style={{ flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' }}>
+                <ActivityIndicator size="large" color={colors.primary} />
+            </SafeAreaView>
+        );
+    }
 
     if (!room) {
         return (
@@ -27,13 +138,22 @@ export default function RoomDetailScreen() {
         );
     }
 
-    const handleToggle = (deviceId: string, value: boolean) => {
+    const handleToggle = async (deviceId: string, value: boolean) => {
         setDevices((prev) =>
             prev.map((d) => (d.id === deviceId ? { ...d, isOn: value } : d)),
         );
+
+        try {
+            await devicesAPI.toggle(deviceId, value);
+        } catch (error) {
+            console.error('Failed to toggle device:', error);
+            setDevices((prev) =>
+                prev.map((d) => (d.id === deviceId ? { ...d, isOn: !value } : d)),
+            );
+        }
     };
 
-    const handleDevicePress = (device: Device) => {
+    const handleDevicePress = (device: DeviceCardModel) => {
         router.push({ pathname: '/device/[id]', params: { id: device.id } });
     };
 
@@ -42,7 +162,13 @@ export default function RoomDetailScreen() {
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-            <Header title={room.name} showBack subtitle={`${devices.length} thiết bị`} />
+            <Header
+                title={room.name}
+                showBack
+                subtitle={`${devices.length} thiết bị`}
+                rightIcon="settings"
+                onRightPress={() => router.push({ pathname: '/room/[id]/manage', params: { id: room.id } } as never)}
+            />
 
             {/* Room Stats */}
             <View style={{ flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.md, marginBottom: Spacing.md }}>
@@ -56,12 +182,6 @@ export default function RoomDetailScreen() {
                     <View style={{ alignItems: 'center' }}>
                         <Text style={[Typography.number, { color: colors.success }]}>{onlineCount}</Text>
                         <Text style={[Typography.caption, { color: colors.textSecondary }]}>Online</Text>
-                    </View>
-                </Card>
-                <Card style={{ flex: 1, paddingVertical: Spacing.sm }}>
-                    <View style={{ alignItems: 'center' }}>
-                        <Text style={[Typography.number, { color: colors.warning }]}>{room.energyToday}</Text>
-                        <Text style={[Typography.caption, { color: colors.textSecondary }]}>kWh</Text>
                     </View>
                 </Card>
             </View>

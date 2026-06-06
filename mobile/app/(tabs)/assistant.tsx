@@ -2,15 +2,32 @@ import React, { useState, useRef } from 'react';
 import { View, Text, FlatList, TextInput, Pressable, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
-import { ChatBubble } from '@/components/ChatBubble';
+import { ChatBubble, ChatMessage } from '@/components/ChatBubble';
 import { Spacing, BorderRadius } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
 import { Feather } from '@expo/vector-icons';
-import { mockChatMessages, quickCommands, ChatMessage } from '@/services/mockData';
+
+const quickCommands = [
+    'Tắt đèn phòng ngủ',
+    'Bật máy lạnh 24°C',
+    'Kích hoạt chế độ đi ngủ',
+    'Mở rèm phòng khách',
+    'Khóa tất cả cửa',
+    'Tắt tất cả thiết bị',
+];
+
+const initialMessages: ChatMessage[] = [
+    {
+        id: 'welcome',
+        text: 'Xin chào! Tôi có thể giúp gì cho bạn?',
+        isUser: false,
+        timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+    },
+];
 
 export default function AssistantScreen() {
     const { colors } = useTheme();
-    const [messages, setMessages] = useState<ChatMessage[]>(mockChatMessages);
+    const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
     const [input, setInput] = useState('');
     const flatListRef = useRef<FlatList>(null);
 

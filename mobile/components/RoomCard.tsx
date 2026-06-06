@@ -6,11 +6,19 @@ import { Badge } from './ui/Badge';
 import { Spacing } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
 import { Feather } from '@expo/vector-icons';
-import { Room } from '@/services/mockData';
+
+export interface RoomCardModel {
+    id: string;
+    name: string;
+    icon?: string;
+    isOnline: boolean;
+    activeDevices: number;
+    deviceCount: number;
+}
 
 interface RoomCardProps {
-    room: Room;
-    onPress: (room: Room) => void;
+    room: RoomCardModel;
+    onPress: (room: RoomCardModel) => void;
 }
 
 export function RoomCard({ room, onPress }: RoomCardProps) {
@@ -46,12 +54,6 @@ export function RoomCard({ room, onPress }: RoomCardProps) {
                 </Text>
             </View>
 
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginTop: Spacing.xs }}>
-                <Feather name="zap" size={12} color={colors.warning} />
-                <Text style={[Typography.caption, { color: colors.textSecondary }]}>
-                    {room.energyToday} kWh
-                </Text>
-            </View>
         </Card>
     );
 }
