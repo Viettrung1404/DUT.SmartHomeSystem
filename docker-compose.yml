@@ -8,11 +8,34 @@ services:
       - "8000:8000"
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/smarthome
+      - AI_SERVER_URL=http://ai-server:8100
+      - AI_SERVER_API_KEY=${AI_SERVER_API_KEY:-change_me}
     depends_on:
       - db
+      - ai-server
     volumes:
       - ./backend/src:/app/src
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - app-network
+
+  # AI assistant service
+  ai-server:
+    build:
+      context: .
+      dockerfile: ai-server/Dockerfile
+    ports:
+      - "8100:8100"
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://postgres:postgres@db:5432/smarthome
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:3b}
+      - AI_SERVER_API_KEY=${AI_SERVER_API_KEY:-change_me}
+      - MEMORY_BACKEND=memory
+      - REQUEST_TIMEOUT_SECONDS=60
+      - MAX_TOOL_ROWS=50
+    depends_on:
+      - db
     networks:
       - app-network
 

@@ -453,4 +453,32 @@ export const suggestionsAPI = {
         }),
 };
 
+// ============ AI CHAT ============
+
+export interface SmartHomeChatResponse {
+    answer: string;
+    intent: string;
+    used_tools: string[];
+    evidence: Record<string, unknown>[];
+    suggested_actions: string[];
+    memory_updated: boolean;
+    severity: string;
+    device_command?: Record<string, unknown> | null;
+    command_executed?: boolean;
+    command_result?: Record<string, unknown> | null;
+}
+
+export const aiChatAPI = {
+    ask: (data: { home_id: string; message: string; session_id?: string; timezone?: string }) =>
+        apiFetch<SmartHomeChatResponse>('/chat/smart-home', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+    reset: (sessionId: string) =>
+        apiFetch<{ success: boolean }>('/chat/smart-home/reset', {
+            method: 'POST',
+            body: JSON.stringify({ session_id: sessionId }),
+        }),
+};
+
 export { API_BASE_URL };
