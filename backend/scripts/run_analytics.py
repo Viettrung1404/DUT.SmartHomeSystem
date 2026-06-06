@@ -7,7 +7,6 @@ Chạy thủ công để dev/test:
 Trong production, Celery beat gọi hàm run_full_pipeline() lúc 2h sáng.
 """
 
-import json
 import os
 import sys
 from datetime import datetime, timedelta
@@ -29,23 +28,76 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:123456@localhost:5432/smarthome")
 TZ     = ZoneInfo("Asia/Ho_Chi_Minh")
-ANALYTICS_CONFIG_PATH = Path(__file__).with_name("analytics_best_config.json")
 
 # ─── Ngưỡng tối thiểu để chạy analytics ─────────────────────────────────────
 MIN_DAYS_RULE_BASED = 7    # Rule-based cần ít nhất 7 ngày
-MIN_DAYS_KMEANS     = 30   # KMeans cần ít nhất 30 ngày
-MIN_USERS_KMEANS    = 2    # KMeans vô nghĩa với 1 user
+MAX_SESSION_DURATION_SECONDS = 24 * 60 * 60
 
 
-def load_analytics_config() -> dict:
-    """Load best model/params exported from notebook, return empty config if missing."""
-    try:
-        if ANALYTICS_CONFIG_PATH.exists():
-            with open(ANALYTICS_CONFIG_PATH, "r", encoding="utf-8") as f:
-                return json.load(f)
-    except Exception as e:
-        print(f"[WARN] Không đọc được config {ANALYTICS_CONFIG_PATH}: {e}")
-    return {}
+# ═══════════════════════════════════════════════════════════════════════════════
+# PHASE 0 - PREPROCESSING / DATA QUALITY GATE
+#
+# Production analytics does not rewrite raw activity_logs. Instead, this phase
+# defines the data-quality contract used by all downstream mining queries:
+#   - keep only attributed user/physical activity
+#   - require user_id, device_id, timestamp
+#   - keep supported event types
+#   - reject negative or unrealistic session durations
+# The ETL layer still owns CSV parsing, timestamp normalization and ON/OFF
+# session pairing.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def duration_quality_predicate(alias: str = "") -> str:
+    prefix = f"{alias}." if alias else ""
+    return (
+        f"({prefix}duration_seconds IS NULL OR "
+        f"({prefix}duration_seconds >= 0 AND "
+        f"{prefix}duration_seconds <= {MAX_SESSION_DURATION_SECONDS}))"
+    )
+
+
+def preprocess_activity_window(session: Session, home_id, lookback_days=60) -> dict:
+    since = datetime.now(TZ) - timedelta(days=lookback_days)
+
+    row = session.execute(text(f"""
+        SELECT
+            COUNT(*) AS total_rows,
+            COUNT(*) FILTER (
+                WHERE timestamp IS NULL
+                   OR user_id IS NULL
+                   OR device_id IS NULL
+                   OR event_type NOT IN ('DEVICE_ON', 'DEVICE_OFF', 'FORGOT_OFF')
+            ) AS missing_or_unsupported_rows,
+            COUNT(*) FILTER (
+                WHERE NOT {duration_quality_predicate()}
+            ) AS invalid_duration_rows,
+            COUNT(*) FILTER (
+                WHERE trigger_source NOT IN ('USER', 'PHYSICAL_ATTRIBUTED')
+            ) AS ignored_trigger_rows,
+            COUNT(*) FILTER (
+                WHERE timestamp IS NOT NULL
+                  AND user_id IS NOT NULL
+                  AND device_id IS NOT NULL
+                  AND event_type IN ('DEVICE_ON', 'DEVICE_OFF', 'FORGOT_OFF')
+                  AND trigger_source IN ('USER', 'PHYSICAL_ATTRIBUTED')
+                  AND {duration_quality_predicate()}
+            ) AS valid_rows
+        FROM activity_logs
+        WHERE home_id = :hid
+          AND timestamp >= :since
+    """), {"hid": str(home_id), "since": since}).mappings().one()
+
+    return dict(row)
+
+
+def print_preprocessing_summary(summary: dict):
+    print(
+        "  [Preprocessing] "
+        f"valid={summary['valid_rows']}/{summary['total_rows']}, "
+        f"missing_or_unsupported={summary['missing_or_unsupported_rows']}, "
+        f"invalid_duration={summary['invalid_duration_rows']}, "
+        f"ignored_trigger={summary['ignored_trigger_rows']}"
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -66,7 +118,7 @@ def mine_time_habits(session: Session, home_id, user_id, lookback_days=30) -> li
     """
     since = datetime.now(TZ) - timedelta(days=lookback_days)
 
-    rows = session.execute(text("""
+    rows = session.execute(text(f"""
         WITH base AS (
             SELECT
                 device_id,
@@ -79,6 +131,9 @@ def mine_time_habits(session: Session, home_id, user_id, lookback_days=30) -> li
               AND event_type = 'DEVICE_ON'
               AND trigger_source IN ('USER', 'PHYSICAL_ATTRIBUTED')
               AND timestamp >= :since
+              AND user_id IS NOT NULL
+              AND device_id IS NOT NULL
+              AND {duration_quality_predicate()}
         )
         SELECT
             device_id,
@@ -148,7 +203,7 @@ def save_time_habits(session: Session, home_id, user_id, habits: list[dict]):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PHASE 2 — KMEANS CLUSTERING
+# LEGACY CLUSTER HELPERS (unused in runtime)
 #
 # Feature vector mỗi user (27 chiều):
 #   h0..h23   (24): tần suất bật thiết bị theo giờ (normalized 0-1)
@@ -173,7 +228,7 @@ def extract_feature_vector(session: Session, home_id, user_id, lookback_days=60)
     """Trả về vector 27 chiều cho user. None nếu không đủ data."""
     since = datetime.now(TZ) - timedelta(days=lookback_days)
 
-    rows = session.execute(text("""
+    rows = session.execute(text(f"""
         SELECT
             EXTRACT(HOUR FROM al.timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')::int AS hour,
             EXTRACT(DOW  FROM al.timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')::int AS dow,
@@ -186,6 +241,9 @@ def extract_feature_vector(session: Session, home_id, user_id, lookback_days=60)
           AND al.event_type  = 'DEVICE_ON'
           AND al.trigger_source IN ('USER', 'PHYSICAL_ATTRIBUTED')
           AND al.timestamp  >= :since
+          AND al.user_id IS NOT NULL
+          AND al.device_id IS NOT NULL
+          AND {duration_quality_predicate("al")}
     """), {"hid": str(home_id), "uid": str(user_id), "since": since}).fetchall()
 
     if len(rows) < 20:
@@ -409,21 +467,6 @@ def run_dbscan(session: Session, home_id, user_ids: list, lookback_days=60, para
     )
 
 
-def run_clustering(session: Session, home_id, user_ids: list, lookback_days=60, analytics_cfg: dict | None = None):
-    """Dispatch clustering model based on analytics_best_config.json, fallback to KMeans."""
-    analytics_cfg = analytics_cfg or {}
-    cluster_cfg = analytics_cfg.get("clustering") or {}
-    model_name = str(cluster_cfg.get("model", "KMeans")).upper()
-    params = cluster_cfg.get("params") or {}
-
-    if model_name == "DBSCAN":
-        print("\n  [Clustering: DBSCAN]")
-        run_dbscan(session, home_id, user_ids, lookback_days=lookback_days, params=params)
-    else:
-        print("\n  [Clustering: KMeans]")
-        run_kmeans(session, home_id, user_ids, lookback_days=lookback_days, params=params)
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # PHASE 3 — ANOMALY DETECTOR
 #
@@ -434,7 +477,7 @@ def run_clustering(session: Session, home_id, user_ids: list, lookback_days=60, 
 def detect_anomalies(session: Session, home_id, user_id, lookback_days=30) -> list[dict]:
     since = datetime.now(TZ) - timedelta(days=lookback_days)
 
-    rows = session.execute(text("""
+    rows = session.execute(text(f"""
         SELECT
             device_id,
             AVG(duration_seconds)    AS avg_dur,
@@ -445,6 +488,7 @@ def detect_anomalies(session: Session, home_id, user_id, lookback_days=30) -> li
           AND user_id     = :uid
           AND event_type  = 'DEVICE_ON'
           AND duration_seconds IS NOT NULL
+          AND {duration_quality_predicate()}
           AND timestamp  >= :since
         GROUP BY device_id
         HAVING COUNT(*) >= 5
@@ -457,13 +501,14 @@ def detect_anomalies(session: Session, home_id, user_id, lookback_days=30) -> li
         threshold = avg_dur_float + 2 * std_dur_float
 
         # Lấy các lần bật thực sự lâu hơn ngưỡng
-        outliers = session.execute(text("""
+        outliers = session.execute(text(f"""
             SELECT timestamp, duration_seconds
             FROM activity_logs
             WHERE home_id     = :hid
               AND user_id     = :uid
               AND device_id   = :did
               AND event_type  = 'DEVICE_ON'
+              AND {duration_quality_predicate()}
               AND duration_seconds > :thresh
               AND timestamp  >= :since
             ORDER BY timestamp DESC
@@ -524,8 +569,6 @@ def run_full_pipeline(session: Session = None):
 
     try:
         with session.begin():
-            analytics_cfg = load_analytics_config()
-
             # Lấy tất cả home đang active
             homes = session.execute(text(
                 "SELECT id FROM homes WHERE is_active = true"
@@ -555,6 +598,12 @@ def run_full_pipeline(session: Session = None):
 
                 days_available = (datetime.now(TZ) - oldest.replace(tzinfo=TZ)).days
                 print(f"  Data: {days_available} ngày / {len(users)} users")
+                preprocessing_summary = preprocess_activity_window(session, home_id, lookback_days=60)
+                print_preprocessing_summary(preprocessing_summary)
+
+                if preprocessing_summary["valid_rows"] == 0:
+                    print("  [SKIP] Không có dữ liệu hợp lệ sau preprocessing")
+                    continue
 
                 for user_row in users:
                     uid, email = user_row[0], user_row[1]
@@ -568,15 +617,6 @@ def run_full_pipeline(session: Session = None):
                         print("  [Anomaly]")
                         anomalies = detect_anomalies(session, home_id, uid, lookback_days=30)
                         save_anomalies(session, home_id, uid, anomalies)
-
-                if days_available >= MIN_DAYS_KMEANS and len(user_ids) >= MIN_USERS_KMEANS:
-                    run_clustering(
-                        session,
-                        home_id,
-                        user_ids,
-                        lookback_days=60,
-                        analytics_cfg=analytics_cfg,
-                    )
 
     finally:
         if should_close:

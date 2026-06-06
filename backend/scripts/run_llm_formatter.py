@@ -22,7 +22,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import bindparam, create_engine, text
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 
@@ -209,23 +209,154 @@ def parse_llm_output(raw: str) -> dict | None:
     return None
 
 
-def load_decision_candidates(decision_json_path: str) -> list[dict]:
-    path = Path(decision_json_path)
-    if not path.is_absolute():
-        path = (Path(__file__).resolve().parents[1] / decision_json_path).resolve()
-    if not path.exists():
-        print(f"  [WARN] Decision JSON không tồn tại: {path}")
-        return []
+def build_fallback_suggestion(pattern: dict, display_name: str | None = None) -> dict:
+    """Create a deterministic suggestion when the LLM service is unavailable."""
+    ptype = pattern["pattern_type"]
+    data = pattern["pattern_data"] or {}
+    device_name = display_name or DEVICE_NAMES_VN.get(
+        pattern.get("device_id", ""),
+        pattern.get("device_id", "thiết bị"),
+    )
 
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(payload, list):
-            print(f"  [WARN] Decision JSON phải là list: {path}")
-            return []
-        return [item for item in payload if isinstance(item, dict)]
-    except Exception as exc:
-        print(f"  [WARN] Không đọc được decision JSON {path}: {exc}")
-        return []
+    if ptype == "TIME_HABIT":
+        hour = int(data.get("hour", 22))
+        days = data.get("days_of_week", [])
+        days_str = ", ".join(DOW_VN.get(int(d), str(d)) for d in days) or "các ngày gần đây"
+        return {
+            "title": f"Tạo lịch cho {device_name}",
+            "description": (
+                f"Hệ thống nhận thấy bạn thường bật {device_name} lúc {hour:02d}:00 vào {days_str}. "
+                "Bạn có thể tạo lịch tự động để thao tác thuận tiện hơn."
+            ),
+            "action_type": "SCHEDULE",
+            "schedule_payload": {
+                "time": f"{hour:02d}:00",
+                "days_of_week": days,
+                "action_payload": {"power": "ON"},
+            },
+        }
+
+    if ptype == "ANOMALY":
+        occurrences = data.get("occurrences", "?")
+        label = data.get("label_vn") or f"{device_name} có dấu hiệu sử dụng bất thường"
+        return {
+            "title": f"Cảnh báo {device_name}",
+            "description": (
+                f"{label}. Mẫu này xuất hiện {occurrences} lần trong dữ liệu gần đây; "
+                "bạn nên kiểm tra trạng thái thiết bị để tránh lãng phí điện hoặc rủi ro vận hành."
+            ),
+            "action_type": "ALERT",
+            "schedule_payload": None,
+        }
+
+    if ptype == "CLUSTER":
+        label = data.get("label_vn") or data.get("cluster_name") or "thói quen sử dụng thiết bị"
+        return {
+            "title": "Tối ưu thói quen sử dụng",
+            "description": (
+                f"Hệ thống ghi nhận {label}. Bạn có thể xem lại lịch tự động và thiết bị thường dùng "
+                "để tối ưu tiện nghi và điện năng."
+            ),
+            "action_type": "AUTOMATION",
+            "schedule_payload": None,
+        }
+
+    return {
+        "title": "Gợi ý nhà thông minh",
+        "description": "Hệ thống phát hiện một mẫu sử dụng thiết bị đáng chú ý và đề xuất bạn kiểm tra lại.",
+        "action_type": "ALERT",
+        "schedule_payload": None,
+    }
+
+
+def load_latest_decision_candidates_for_home(session: Session, home_id, limit: int = 0) -> list[dict]:
+    sql = """
+        WITH latest_decision AS (
+            SELECT DISTINCT ON (sdl.pattern_id)
+                sdl.pattern_id,
+                sdl.decision_score,
+                sdl.should_suggest,
+                sdl.blocked_by,
+                sdl.cooldown_signature,
+                sdl.metadata_json,
+                sdl.created_at AS decision_created_at
+            FROM suggestion_decision_logs sdl
+            JOIN user_patterns up ON up.id = sdl.pattern_id
+            WHERE up.home_id = :hid
+            ORDER BY sdl.pattern_id, sdl.created_at DESC, sdl.id DESC
+        )
+        SELECT
+            up.id,
+            up.user_id,
+            up.device_id,
+            d.slug AS device_slug,
+            d.name AS device_name,
+            up.pattern_type,
+            up.pattern_data,
+            up.confidence,
+            u.full_name,
+            u.email,
+            ld.decision_score,
+            ld.should_suggest,
+            ld.blocked_by,
+            ld.cooldown_signature,
+            ld.metadata_json,
+            ld.decision_created_at
+        FROM latest_decision ld
+        JOIN user_patterns up ON up.id = ld.pattern_id
+        JOIN users u ON u.id = up.user_id
+        LEFT JOIN devices d ON d.id = up.device_id
+        WHERE up.home_id = :hid
+          AND up.is_active = true
+          AND ld.should_suggest = true
+        ORDER BY ld.decision_score DESC, ld.decision_created_at DESC, up.id DESC
+    """
+    params = {"hid": str(home_id)}
+    if limit and limit > 0:
+        sql += " LIMIT :limit"
+        params["limit"] = int(limit)
+
+    rows = session.execute(text(sql), params).fetchall()
+    ordered: list[dict] = []
+
+    for row in rows:
+        meta = row.metadata_json or {}
+        score = round(float(row.decision_score or 0.0), 4)
+        ordered.append({
+            "row": row,
+            "candidate": {
+                "pattern_id": int(row.id),
+                "home_id": str(home_id),
+                "user_id": str(row.user_id),
+                "user_email": row.email,
+                "user_name": row.full_name,
+                "device_id": str(row.device_id) if row.device_id else None,
+                "pattern_type": row.pattern_type,
+                "threshold": meta.get("threshold"),
+                "score": score,
+                "usefulness": bool(meta.get("usefulness", True)),
+                "usefulness_reasons": list(meta.get("usefulness_reasons", [])),
+                "cooldown_pass": True,
+                "cooldown_reasons": list(meta.get("cooldown_reasons", [])),
+                "cooldown_signature": row.cooldown_signature,
+                "priority_score": meta.get("priority_score"),
+                "priority_reason": list(meta.get("priority_reason", [])),
+                "priority_hard_override": bool(meta.get("priority_hard_override", False)),
+                "priority_rank": None,
+                "score_breakdown": meta.get("score_breakdown", {}),
+                "decision_score": score,
+                "decision_created_at": row.decision_created_at,
+                "blocked_by": row.blocked_by,
+            },
+            "sort_key": (
+                score,
+                row.decision_created_at,
+                int(row.id),
+            ),
+        })
+
+    ordered.sort(key=lambda item: item["sort_key"], reverse=True)
+    return ordered
 
 
 def build_explanation_json(candidate: dict) -> dict:
@@ -248,26 +379,37 @@ def load_patterns_for_candidates(session: Session, home_id, candidates: list[dic
     if not candidates:
         return []
 
-    candidate_ids = [int(c["pattern_id"]) for c in candidates if c.get("pattern_id") is not None]
+    normalized_candidates = [
+        c.get("candidate", c)
+        for c in candidates
+        if isinstance(c, dict)
+    ]
+    candidate_ids = [
+        int(c["pattern_id"])
+        for c in normalized_candidates
+        if c.get("pattern_id") is not None
+    ]
     if not candidate_ids:
         return []
 
-    rows = session.execute(text("""
+    stmt = text("""
         SELECT
-            up.id, up.user_id, up.device_id, up.pattern_type,
+            up.id, up.user_id, up.device_id, d.slug AS device_slug, d.name AS device_name, up.pattern_type,
             up.pattern_data, up.confidence,
             u.full_name
         FROM user_patterns up
         JOIN users u ON u.id = up.user_id
+        LEFT JOIN devices d ON d.id = up.device_id
         WHERE up.home_id = :hid
-          AND up.id = ANY(:pattern_ids)
-    """), {"hid": str(home_id), "pattern_ids": candidate_ids}).fetchall()
+          AND up.id IN :pattern_ids
+    """).bindparams(bindparam("pattern_ids", expanding=True))
+    rows = session.execute(stmt, {"hid": str(home_id), "pattern_ids": candidate_ids}).fetchall()
 
     row_map = {int(row.id): row for row in rows}
     ordered = []
-    candidate_order = {int(c["pattern_id"]): idx for idx, c in enumerate(candidates)}
+    candidate_order = {int(c["pattern_id"]): idx for idx, c in enumerate(normalized_candidates)}
 
-    for candidate in candidates:
+    for candidate in normalized_candidates:
         pid = int(candidate["pattern_id"])
         row = row_map.get(pid)
         if not row:
@@ -297,11 +439,12 @@ def format_suggestions_for_home(session: Session, home_id, decision_candidates: 
     else:
         patterns = session.execute(text("""
             SELECT
-                up.id, up.user_id, up.device_id, up.pattern_type,
+                up.id, up.user_id, up.device_id, d.slug AS device_slug, d.name AS device_name, up.pattern_type,
                 up.pattern_data, up.confidence,
                 u.full_name
             FROM user_patterns up
             JOIN users u ON u.id = up.user_id
+            LEFT JOIN devices d ON d.id = up.device_id
             WHERE up.home_id  = :hid
               AND up.is_active = true
               AND up.confidence >= 0.5
@@ -321,7 +464,7 @@ def format_suggestions_for_home(session: Session, home_id, decision_candidates: 
 
         pattern_dict = {
             "pattern_type": p.pattern_type,
-            "device_id":    p.device_id,
+            "device_id":    p.device_slug or str(p.device_id or ""),
             "pattern_data": p.pattern_data,
             "confidence":   p.confidence,
         }
@@ -335,7 +478,11 @@ def format_suggestions_for_home(session: Session, home_id, decision_candidates: 
         parsed = parse_llm_output(raw)
 
         if not parsed:
-            continue
+            print("      [Fallback] LLM unavailable or invalid output, using rule-based formatter")
+            parsed = build_fallback_suggestion(
+                pattern_dict,
+                p.device_name or p.device_slug or str(p.device_id or ""),
+            )
 
         # Map action_type string → Enum
         action_map = {"SCHEDULE": ActionType.SCHEDULE, "ALERT": ActionType.ALERT,
@@ -365,7 +512,9 @@ def format_suggestions_for_home(session: Session, home_id, decision_candidates: 
             suggestion_json={
                 "title":            parsed.get("title"),
                 "description":      parsed.get("description"),
-                "device_id":        p.device_id,
+                "device_id":        str(p.device_id) if p.device_id else None,
+                "device_slug":      p.device_slug,
+                "device_name":      p.device_name,
                 "action_type":      parsed.get("action_type"),
                 "schedule_payload": parsed.get("schedule_payload"),
                 "explanation":      explanation_json,
@@ -386,8 +535,8 @@ def format_suggestions_for_home(session: Session, home_id, decision_candidates: 
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description="Format suggestions from decision candidates or active patterns")
-    parser.add_argument("--decision-json", default="", help="Optional decision layer JSON to sync formatter with")
+    parser = argparse.ArgumentParser(description="Format suggestions from latest decision logs or active patterns")
+    parser.add_argument("--limit", type=int, default=0, help="Max passed decision candidates to format (0 = all)")
     args = parser.parse_args()
 
     engine = create_engine(DB_URL, echo=False)
@@ -398,24 +547,32 @@ def main():
             ).fetchall()
 
             candidate_index: dict[str, list[dict]] = {}
-            if args.decision_json.strip():
-                for candidate in load_decision_candidates(args.decision_json.strip()):
-                    if not candidate.get("should_suggest") or not candidate.get("cooldown_pass"):
-                        continue
-                    home_key = str(candidate.get("home_id"))
-                    candidate_index.setdefault(home_key, []).append(candidate)
+            for home_row in homes:
+                home_key = str(home_row[0])
+                candidate_index[home_key] = load_latest_decision_candidates_for_home(
+                    session,
+                    home_key,
+                )
 
-                for home_candidates in candidate_index.values():
-                    home_candidates.sort(key=lambda item: item.get("priority_rank") or 9999)
+            limit_enabled = args.limit and args.limit > 0
+            remaining = args.limit if limit_enabled else 0
+            for home_key in sorted(candidate_index):
+                home_candidates = candidate_index[home_key]
+                if limit_enabled:
+                    if remaining <= 0:
+                        candidate_index[home_key] = []
+                        continue
+                    candidate_index[home_key] = home_candidates[:remaining]
+                    remaining -= len(candidate_index[home_key])
 
             for home_row in homes:
                 home_id = str(home_row[0])
                 print(f"\n── Home {home_id} ──")
                 home_candidates = candidate_index.get(home_id)
-                if args.decision_json.strip() and not home_candidates:
+                if not home_candidates:
                     print("  [SKIP] Không có candidate đã pass cooldown cho home này")
                     continue
-                format_suggestions_for_home(session, home_id, decision_candidates=home_candidates if args.decision_json.strip() else None)
+                format_suggestions_for_home(session, home_id, decision_candidates=home_candidates)
 
     print("\n✓ Done! Kiểm tra bảng suggestion_logs.")
     print("Bước tiếp theo:")

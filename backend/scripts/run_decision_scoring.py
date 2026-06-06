@@ -4,11 +4,11 @@ Decision scoring layer (phase 1, non-breaking).
 Purpose:
 - Read active patterns from user_patterns.
 - Compute decision score for SHOULD_SUGGEST.
-- Print summary and optionally write JSON candidates.
+- Print summary and write audit rows to suggestion_decision_logs.
 
 Usage:
     python scripts/run_decision_scoring.py
-    python scripts/run_decision_scoring.py --threshold 0.65 --write-json scripts/decision_candidates.json
+    python scripts/run_decision_scoring.py --threshold 0.65
 """
 
 import argparse
@@ -503,7 +503,7 @@ def load_active_patterns(session: Session, home_id: str | None):
     return session.execute(text(sql), params).fetchall()
 
 
-def run_decision_scoring(home_id: str | None, threshold: float, write_json: str | None):
+def run_decision_scoring(home_id: str | None, threshold: float):
     engine = create_engine(DB_URL, echo=False)
     weights = DecisionWeights()
 
@@ -593,6 +593,7 @@ def run_decision_scoring(home_id: str | None, threshold: float, write_json: str 
                 blocked_by=blocked_by,
                 cooldown_signature=cooldown_signature,
                 metadata_json={
+                    "threshold": threshold,
                     "usefulness_reasons": usefulness_reasons,
                     "cooldown_reasons": cooldown_reasons,
                     "score_breakdown": {k: round(v, 4) for k, v in comps.items()},
@@ -606,7 +607,7 @@ def run_decision_scoring(home_id: str | None, threshold: float, write_json: str 
                 "user_id": str(r.user_id),
                 "user_email": r.email,
                 "user_name": r.full_name,
-                "device_id": r.device_id,
+                "device_id": str(r.device_id) if r.device_id else None,
                 "pattern_type": r.pattern_type,
                 "threshold": threshold,
                 "score": round(score, 4),
@@ -654,14 +655,6 @@ def run_decision_scoring(home_id: str | None, threshold: float, write_json: str 
         print(f"  Should suggest : {suggest_count}")
         print(f"  Skip           : {len(results) - suggest_count}")
 
-        if write_json:
-            out_path = Path(write_json)
-            if not out_path.is_absolute():
-                out_path = (Path(__file__).resolve().parents[1] / write_json).resolve()
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-            out_path.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
-            print(f"  Output JSON    : {out_path}")
-
         return results
 
 
@@ -669,14 +662,12 @@ def main():
     parser = argparse.ArgumentParser(description="Decision scoring layer (phase 1)")
     parser.add_argument("--home-id", default="", help="Optional home UUID to filter")
     parser.add_argument("--threshold", type=float, default=0.65, help="Suggest threshold [0,1]")
-    parser.add_argument("--write-json", default="", help="Optional output JSON path")
     args = parser.parse_args()
 
     threshold = clamp01(args.threshold)
     home_id = args.home_id.strip() or None
-    write_json = args.write_json.strip() or None
 
-    run_decision_scoring(home_id=home_id, threshold=threshold, write_json=write_json)
+    run_decision_scoring(home_id=home_id, threshold=threshold)
 
 
 if __name__ == "__main__":
