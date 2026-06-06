@@ -1,35 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, FlatList, ActivityIndicator } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Header } from '@/components/ui/Header';
 import { RoomCard, RoomCardModel } from '@/components/RoomCard';
 import { Spacing } from '@/constants/theme';
 import { homesAPI, roomsAPI } from '@/services/api';
-
-const ROOM_ICON_RULES: Array<{ match: RegExp; icon: string }> = [
-    { match: /khach|living/, icon: 'tv' },
-    { match: /ngu|bed/, icon: 'moon' },
-    { match: /bep|kitchen/, icon: 'coffee' },
-    { match: /tam|bath/, icon: 'droplet' },
-    { match: /ban cong|balcony/, icon: 'sun' },
-    { match: /gara|garage/, icon: 'truck' },
-    { match: /lam viec|office/, icon: 'briefcase' },
-    { match: /tre|kids|child/, icon: 'smile' },
-    { match: /kho|storage/, icon: 'archive' },
-];
-
-function normalizeRoomName(name: string) {
-    return name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-}
-
-function resolveRoomIcon(name: string, icon?: string | null) {
-    if (icon) return icon;
-    const normalized = normalizeRoomName(name);
-    const rule = ROOM_ICON_RULES.find((item) => item.match.test(normalized));
-    return rule?.icon ?? 'home';
-}
+import { resolveRoomIcon } from '@/utils/roomIcons';
 
 export default function RoomsScreen() {
     const { colors } = useTheme();
@@ -37,11 +15,7 @@ export default function RoomsScreen() {
     const [rooms, setRooms] = useState<RoomCardModel[]>([]);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        loadRooms();
-    }, []);
-
-    const loadRooms = async () => {
+    const loadRooms = useCallback(async () => {
         try {
             setLoading(true);
             const homes = await homesAPI.list();
@@ -67,7 +41,13 @@ export default function RoomsScreen() {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
+
+    useFocusEffect(
+        useCallback(() => {
+            void loadRooms();
+        }, [loadRooms]),
+    );
 
     const handleRoomPress = (room: RoomCardModel) => {
         router.push({ pathname: '/room/[id]', params: { id: room.id } });
@@ -98,9 +78,7 @@ export default function RoomsScreen() {
                 numColumns={2}
                 contentContainerStyle={{ padding: Spacing.md, gap: Spacing.sm }}
                 columnWrapperStyle={{ gap: Spacing.sm }}
-                renderItem={({ item }) => (
-                    <RoomCard room={item} onPress={handleRoomPress} />
-                )}
+                renderItem={({ item }) => <RoomCard room={item} onPress={handleRoomPress} />}
                 showsVerticalScrollIndicator={false}
             />
         </SafeAreaView>

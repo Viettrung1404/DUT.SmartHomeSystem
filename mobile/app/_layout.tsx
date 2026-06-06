@@ -43,7 +43,23 @@ function InnerLayout() {
           options={{ animation: 'slide_from_right' }}
         />
         <Stack.Screen
-          name="settings"
+          name="settings/index"
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="settings/home"
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="settings/account"
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="settings/connectivity"
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="settings/about"
           options={{ animation: 'slide_from_right' }}
         />
       </Stack>

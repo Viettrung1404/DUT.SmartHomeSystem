@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, Pressable } from 'react-native';
-import { useRouter } from 'expo-router';
+import React, { useCallback, useState } from 'react';
+import { View, Text, FlatList } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Header } from '@/components/ui/Header';
 import { AutomationCard, AutomationCardModel } from '@/components/AutomationCard';
-import { Spacing, BorderRadius } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
 import { Feather } from '@expo/vector-icons';
 import { automationsAPI, homesAPI } from '@/services/api';
@@ -15,11 +15,7 @@ export default function AutomationScreen() {
     const router = useRouter();
     const [automations, setAutomations] = useState<AutomationCardModel[]>([]);
 
-    useEffect(() => {
-        loadAutomations();
-    }, []);
-
-    const loadAutomations = async () => {
+    const loadAutomations = useCallback(async () => {
         try {
             const homes = await homesAPI.list();
             if (!homes.length) {
@@ -45,7 +41,13 @@ export default function AutomationScreen() {
             console.error('Failed to load automations:', error);
             setAutomations([]);
         }
-    };
+    }, []);
+
+    useFocusEffect(
+        useCallback(() => {
+            void loadAutomations();
+        }, [loadAutomations]),
+    );
 
     const handleToggle = async (id: string, value: boolean) => {
         setAutomations((prev) =>
@@ -90,29 +92,6 @@ export default function AutomationScreen() {
                     </View>
                 }
             />
-
-            {/* FAB */}
-            <Pressable
-                onPress={() => router.push('/automation/create')}
-                style={{
-                    position: 'absolute',
-                    bottom: 24,
-                    right: 24,
-                    width: 56,
-                    height: 56,
-                    borderRadius: 28,
-                    backgroundColor: colors.primary,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    shadowColor: colors.primary,
-                    shadowOffset: { width: 0, height: 4 },
-                    shadowOpacity: 0.4,
-                    shadowRadius: 12,
-                    elevation: 8,
-                }}
-            >
-                <Feather name="plus" size={24} color="#FFFFFF" />
-            </Pressable>
         </SafeAreaView>
     );
 }

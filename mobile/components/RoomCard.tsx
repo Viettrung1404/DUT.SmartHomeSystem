@@ -23,7 +23,9 @@ interface RoomCardProps {
 
 export function RoomCard({ room, onPress }: RoomCardProps) {
     const { colors } = useTheme();
-    const iconName = (room.icon || 'home') as keyof typeof Feather.glyphMap;
+    const iconName = room.icon && room.icon in Feather.glyphMap
+        ? (room.icon as keyof typeof Feather.glyphMap)
+        : 'home';
 
     return (
         <Card onPress={() => onPress(room)} style={{ flex: 1 }}>
@@ -53,7 +55,6 @@ export function RoomCard({ room, onPress }: RoomCardProps) {
                     {room.activeDevices}/{room.deviceCount} thiết bị
                 </Text>
             </View>
-
         </Card>
     );
 }

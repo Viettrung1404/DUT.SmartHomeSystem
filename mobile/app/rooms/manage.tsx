@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/Input';
 import { Typography } from '@/constants/typography';
 import { Spacing } from '@/constants/theme';
 import { homesAPI, roomsAPI } from '@/services/api';
+import { findRoomPresetKey } from '@/utils/roomIcons';
 
 interface RoomItem {
     id: string;
@@ -33,8 +34,13 @@ const ROOM_PRESETS = [
 
 type RoomPreset = (typeof ROOM_PRESETS)[number];
 
-const findPresetByIcon = (icon?: string) =>
-    ROOM_PRESETS.find((preset) => preset.icon === icon) ?? ROOM_PRESETS[ROOM_PRESETS.length - 1];
+const findPresetByIcon = (icon?: string) => {
+    const matchedKey = findRoomPresetKey(icon);
+    if (matchedKey) {
+        return ROOM_PRESETS.find((preset) => preset.value === matchedKey || preset.icon === matchedKey) ?? ROOM_PRESETS[ROOM_PRESETS.length - 1];
+    }
+    return ROOM_PRESETS.find((preset) => preset.icon === icon || preset.value === icon) ?? ROOM_PRESETS[ROOM_PRESETS.length - 1];
+};
 
 export default function RoomsManageScreen() {
     const { colors } = useTheme();

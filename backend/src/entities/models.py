@@ -144,6 +144,8 @@ class Room(Base):
     name       = Column(String(50), nullable=False)
     icon       = Column(String(50))
     image_url  = Column(Text)
+    is_active  = Column(Boolean, default=True, nullable=False)
+    archived_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     home      = relationship("Home", back_populates="rooms")
