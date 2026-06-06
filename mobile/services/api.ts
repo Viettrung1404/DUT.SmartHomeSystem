@@ -300,7 +300,6 @@ export interface RoomResponse {
     created_at: string;
     device_count: number;
     active_devices: number;
-    energy_today: number;
     is_online: boolean;
 }
 
@@ -342,6 +341,12 @@ export const devicesAPI = {
             method: 'POST',
             body: JSON.stringify({ room_id: roomId, name, type, metadata }),
         }),
+    update: (id: string, data: { room_id?: string; name?: string; type?: string; metadata?: Record<string, any> }) =>
+        apiFetch<DeviceResponse>(`/devices/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        }),
+    delete: (id: string) => apiFetch<void>(`/devices/${id}`, { method: 'DELETE' }),
     toggle: (id: string, status: boolean) =>
         apiFetch<DeviceResponse>(`/devices/${id}/toggle`, {
             method: 'POST',
@@ -385,26 +390,6 @@ export const automationsAPI = {
             body: JSON.stringify(data),
         }),
     delete: (id: string) => apiFetch<void>(`/automations/${id}`, { method: 'DELETE' }),
-};
-
-// ============ ENERGY ============
-
-export interface EnergyDataPoint {
-    label: string;
-    value: number;
-}
-
-export interface EnergySummaryResponse {
-    total: number;
-    data: EnergyDataPoint[];
-    breakdown: { device_name: string; device_type: string; usage: number; percentage: number }[];
-    comparison?: number;
-}
-
-export const energyAPI = {
-    daily: (homeId: string) => apiFetch<EnergySummaryResponse>(`/energy/daily?home_id=${homeId}`),
-    weekly: (homeId: string) => apiFetch<EnergySummaryResponse>(`/energy/weekly?home_id=${homeId}`),
-    monthly: (homeId: string) => apiFetch<EnergySummaryResponse>(`/energy/monthly?home_id=${homeId}`),
 };
 
 // ============ SECURITY ============

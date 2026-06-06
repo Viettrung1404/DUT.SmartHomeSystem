@@ -12,18 +12,7 @@ from .automation.engine import init_automation_engine, stop_automation_engine
 import logging
 
 # Import all entities so they are registered with Base.metadata
-from .entities.user import User
-from .entities.home import Home
-from .entities.home_member import HomeMember
-from .entities.room import Room
-from .entities.device import Device
-from .entities.device_log import DeviceLog
-from .entities.automation import Automation, AutomationCondition, AutomationAction
-from .entities.energy_log import EnergyLog
-from .entities.security_event import SecurityEvent
-from .entities.suggestion_log import SuggestionLog
-from .entities.auth_session import AuthSession
-from .entities.password_reset_token import PasswordResetToken
+from .entities import models
 
 configure_logging(LogLevels.info)
 
@@ -36,27 +25,41 @@ def _ensure_legacy_schema_compatibility() -> None:
 
     user_columns = {column["name"] for column in inspector.get_columns("users")}
     missing_columns = {"role", "is_active"} - user_columns
-    if not missing_columns:
-        return
-
-    logging.warning(
-        "Schema drift detected on users table. Missing columns: %s. Applying compatibility patch...",
-        ", ".join(sorted(missing_columns)),
-    )
     with engine.begin() as conn:
-        if "role" in missing_columns:
-            conn.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR(20)"))
-            conn.execute(text("UPDATE users SET role = 'MEMBER' WHERE role IS NULL"))
-            conn.execute(text("ALTER TABLE users ALTER COLUMN role SET DEFAULT 'MEMBER'"))
-            conn.execute(text("ALTER TABLE users ALTER COLUMN role SET NOT NULL"))
+        if missing_columns:
+            logging.warning(
+                "Schema drift detected on users table. Missing columns: %s. Applying compatibility patch...",
+                ", ".join(sorted(missing_columns)),
+            )
+            if "role" in missing_columns:
+                conn.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR(20)"))
+                conn.execute(text("UPDATE users SET role = 'MEMBER' WHERE role IS NULL"))
+                conn.execute(text("ALTER TABLE users ALTER COLUMN role SET DEFAULT 'MEMBER'"))
+                conn.execute(text("ALTER TABLE users ALTER COLUMN role SET NOT NULL"))
 
-        if "is_active" in missing_columns:
-            conn.execute(text("ALTER TABLE users ADD COLUMN is_active BOOLEAN"))
-            conn.execute(text("UPDATE users SET is_active = TRUE WHERE is_active IS NULL"))
-            conn.execute(text("ALTER TABLE users ALTER COLUMN is_active SET DEFAULT TRUE"))
-            conn.execute(text("ALTER TABLE users ALTER COLUMN is_active SET NOT NULL"))
+            if "is_active" in missing_columns:
+                conn.execute(text("ALTER TABLE users ADD COLUMN is_active BOOLEAN"))
+                conn.execute(text("UPDATE users SET is_active = TRUE WHERE is_active IS NULL"))
+                conn.execute(text("ALTER TABLE users ALTER COLUMN is_active SET DEFAULT TRUE"))
+                conn.execute(text("ALTER TABLE users ALTER COLUMN is_active SET NOT NULL"))
+            logging.info("Compatibility patch applied for users table")
 
-    logging.info("Compatibility patch applied for users table")
+        if inspector.has_table("rooms"):
+            room_columns = {column["name"] for column in inspector.get_columns("rooms")}
+            missing_room_columns = {"is_active", "archived_at"} - room_columns
+            if missing_room_columns:
+                logging.warning(
+                    "Schema drift detected on rooms table. Missing columns: %s. Applying compatibility patch...",
+                    ", ".join(sorted(missing_room_columns)),
+                )
+                if "is_active" in missing_room_columns:
+                    conn.execute(text("ALTER TABLE rooms ADD COLUMN is_active BOOLEAN"))
+                    conn.execute(text("UPDATE rooms SET is_active = TRUE WHERE is_active IS NULL"))
+                    conn.execute(text("ALTER TABLE rooms ALTER COLUMN is_active SET DEFAULT TRUE"))
+                    conn.execute(text("ALTER TABLE rooms ALTER COLUMN is_active SET NOT NULL"))
+                if "archived_at" in missing_room_columns:
+                    conn.execute(text("ALTER TABLE rooms ADD COLUMN archived_at TIMESTAMPTZ NULL"))
+                logging.info("Compatibility patch applied for rooms table")
 
 
 @asynccontextmanager
@@ -64,9 +67,16 @@ async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
     # Startup
     logging.info("Starting Smart Home backend...")
-    Base.metadata.create_all(bind=engine)
-    _ensure_legacy_schema_compatibility()
-    logging.info("Database tables created")
+    try:
+        _ensure_legacy_schema_compatibility()
+    except Exception as e:
+        logging.warning(f"Skipping compatibility patch due to error: {e}")
+    try:
+        Base.metadata.create_all(bind=engine)
+        logging.info("Database tables created")
+    except Exception as e:
+        # Avoid blocking API startup in mixed-schema dev environments.
+        logging.warning(f"Skipping create_all due to schema mismatch: {e}")
 
     # Initialize MQTT with DB session factory and WS manager
     set_event_loop(asyncio.get_running_loop())
@@ -78,13 +88,19 @@ async def lifespan(app: FastAPI):
         logging.warning(f"MQTT client failed to start: {e}")
 
     # Initialize automation engine
-    init_automation_engine(SessionLocal)
-    logging.info("Automation engine initialized")
+    try:
+        init_automation_engine(SessionLocal)
+        logging.info("Automation engine initialized")
+    except Exception as e:
+        logging.warning(f"Automation engine failed to start: {e}")
 
     yield
 
     # Shutdown
-    stop_automation_engine()
+    try:
+        stop_automation_engine()
+    except Exception:
+        pass
     logging.info("Smart Home backend stopped")
 
 

@@ -8,7 +8,10 @@ from alembic import context
 # Import your models
 import sys
 import os
+from dotenv import load_dotenv
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+load_dotenv()
 
 from src.database.core import Base
 from src.entities.models import Room, Device, User, DeviceState, Schedule, SensorData, ActivityLog
@@ -16,6 +19,11 @@ from src.entities.models import Room, Device, User, DeviceState, Schedule, Senso
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+
+# Prefer DATABASE_URL from .env if provided.
+database_url = os.getenv("DATABASE_URL")
+if database_url:
+    config.set_main_option("sqlalchemy.url", database_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

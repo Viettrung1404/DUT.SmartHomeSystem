@@ -112,7 +112,7 @@ export function DeviceCard({ device, onToggle, onPress }: DeviceCardProps) {
                                 Quat: {device.speed}
                             </Text>
                         )}
-                        {device.door && (
+                        {device.door && deviceType !== 'rain_servo' && (
                             <Text style={[Typography.caption, { color: colors.textSecondary }]}>
                                 Cua: {device.door}
                             </Text>

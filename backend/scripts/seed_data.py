@@ -40,6 +40,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
+from dotenv import load_dotenv
 
 import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
@@ -50,7 +51,9 @@ from src.entities.models import (
     DeviceType, UserRole, EventType, TriggerSource, MetricType,
 )
 
-DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/smarthome")
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
+
+DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:123456@localhost:5432/smarthome")
 try:
     TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 except ZoneInfoNotFoundError:
@@ -59,6 +62,8 @@ except ZoneInfoNotFoundError:
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
+
+DEVICE_SLUG_TO_UUID = {}
 
 def maybe(prob: float) -> bool:
     return random.random() < prob
@@ -216,12 +221,16 @@ def on_off(date, uid, hid, dev_id, h, m, dur_min,
     dur_min == 0 : đây là lệnh TẮT thuần (chỉ tạo OFF).
     """
     logs = []
+    dev_uuid = DEVICE_SLUG_TO_UUID.get(dev_id)
+    if not dev_uuid:
+        return logs
+
     if dur_min == 0:
         logs.append(ActivityLog(
             timestamp=local_dt(date, h, m),
             event_type=EventType.DEVICE_OFF,
             trigger_source=trigger,
-            device_id=dev_id, user_id=uid, home_id=hid,
+            device_id=dev_uuid, user_id=uid, home_id=hid,
             duration_seconds=0,
         ))
         return logs
@@ -239,7 +248,7 @@ def on_off(date, uid, hid, dev_id, h, m, dur_min,
         timestamp=start,
         event_type=on_type,
         trigger_source=trigger,
-        device_id=dev_id, user_id=uid, home_id=hid,
+        device_id=dev_uuid, user_id=uid, home_id=hid,
         session_end=end    if has_off else None,
         duration_seconds=actual * 60 if has_off else None,
     ))
@@ -248,7 +257,7 @@ def on_off(date, uid, hid, dev_id, h, m, dur_min,
             timestamp=end,
             event_type=EventType.DEVICE_OFF,
             trigger_source=trigger,
-            device_id=dev_id, user_id=uid, home_id=hid,
+            device_id=dev_uuid, user_id=uid, home_id=hid,
             duration_seconds=0,
         ))
     return logs
@@ -691,10 +700,12 @@ def create_static_fixtures(session):
         room_map[r["name"]] = room
 
     for dev_id, dev_name, dev_type, room_name in DEVICES_DEF:
-        session.add(Device(id=dev_id, room_id=room_map[room_name].id,
+        dev_uuid = uuid.uuid4()
+        DEVICE_SLUG_TO_UUID[dev_id] = dev_uuid
+        session.add(Device(id=dev_uuid, slug=dev_id, room_id=room_map[room_name].id,
                            name=dev_name, type=dev_type,
                            mqtt_topic=f"home/{dev_id}", config={}))
-        session.add(DeviceState(device_id=dev_id, is_online=True,
+        session.add(DeviceState(device_id=dev_uuid, is_online=True,
                                 state={"power": "OFF"}))
     session.flush()
     return home
@@ -778,10 +789,11 @@ def generate_sensor_data(session, home, seed_days):
     row = session.execute(text("SELECT id FROM rooms WHERE name='Phòng khách' LIMIT 1")).fetchone()
     rid = row[0] if row else None
     for sid, sname in [("sensor_temp","Cảm biến nhiệt độ"),("sensor_humid","Cảm biến độ ẩm")]:
-        if not session.get(Device, sid):
-            session.add(Device(id=sid, name=sname, type=DeviceType.SENSOR,
-                               mqtt_topic=f"home/{sid}", room_id=rid, config={}))
-            session.add(DeviceState(device_id=sid, is_online=True, state={}))
+        dev_uuid = uuid.uuid4()
+        DEVICE_SLUG_TO_UUID[sid] = dev_uuid
+        session.add(Device(id=dev_uuid, slug=sid, name=sname, type=DeviceType.SENSOR,
+                           mqtt_topic=f"home/{sid}", room_id=rid, config={}))
+        session.add(DeviceState(device_id=dev_uuid, is_online=True, state={}))
     session.flush()
 
     records = []
@@ -792,9 +804,9 @@ def generate_sensor_data(session, home, seed_days):
             temp = HOURLY_TEMP[h] + random.gauss(0, 0.8)
             hum  = max(55, min(92, 75 - (h-6)*0.3 + random.gauss(0,3)))
             records += [
-                SensorData(time=ts, device_id="sensor_temp",
+                SensorData(time=ts, device_id=DEVICE_SLUG_TO_UUID.get("sensor_temp"),
                            metric_type=MetricType.TEMP,     value=round(temp,1)),
-                SensorData(time=ts, device_id="sensor_humid",
+                SensorData(time=ts, device_id=DEVICE_SLUG_TO_UUID.get("sensor_humid"),
                            metric_type=MetricType.HUMIDITY, value=round(hum, 1)),
             ]
     for i in range(0, len(records), 500):
@@ -805,9 +817,23 @@ def generate_sensor_data(session, home, seed_days):
 
 def clear_existing_data(session):
     print("  Xoá data cũ...")
-    for t in ["suggestion_logs","user_patterns","activity_logs","sensor_data",
-              "user_presence","device_states","home_users","devices","rooms","users","homes"]:
-        session.execute(text(f"DELETE FROM {t}"))
+    # Truncate theo thứ tự phụ thuộc để xoá sạch data cũ và reset identity/sequence.
+    tables = [
+        "suggestion_logs",
+        "user_patterns",
+        "activity_logs",
+        "sensor_data",
+        "user_presence",
+        "device_states",
+        "home_users",
+        "devices",
+        "rooms",
+        "users",
+        "homes",
+    ]
+    session.execute(text(
+        f"TRUNCATE TABLE {', '.join(tables)} RESTART IDENTITY CASCADE"
+    ))
     session.flush()
 
 

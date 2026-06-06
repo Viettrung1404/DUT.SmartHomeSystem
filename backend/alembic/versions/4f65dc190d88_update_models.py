@@ -36,7 +36,7 @@ def upgrade() -> None:
     op.create_table('user_presence',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('user_id', sa.UUID(), nullable=False),
-    sa.Column('room_id', sa.Integer(), nullable=True),
+    sa.Column('room_id', sa.UUID(), nullable=True),
     sa.Column('is_home', sa.Boolean(), nullable=True),
     sa.Column('detected_by', sa.String(length=20), nullable=True),
     sa.Column('last_seen', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
@@ -49,7 +49,7 @@ def upgrade() -> None:
     op.create_table('user_patterns',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('user_id', sa.UUID(), nullable=False),
-    sa.Column('device_id', sa.String(length=50), nullable=True),
+    sa.Column('device_id', sa.UUID(), nullable=True),
     sa.Column('pattern_type', sa.Enum('CLUSTER', 'TIME_HABIT', 'CORRELATION', 'ANOMALY', name='patterntype'), nullable=False),
     sa.Column('pattern_data', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
     sa.Column('confidence', sa.Float(), nullable=True),
@@ -88,7 +88,7 @@ def upgrade() -> None:
                postgresql_using='event_type::eventtype',
                nullable=False)
     op.alter_column('activity_logs', 'device_id',
-               existing_type=sa.VARCHAR(length=50),
+               existing_type=sa.UUID(),
                nullable=False)
     op.create_index(op.f('ix_activity_logs_timestamp'), 'activity_logs', ['timestamp'], unique=False)
     op.drop_column('activity_logs', 'event_metadata')
@@ -115,7 +115,7 @@ def downgrade() -> None:
     op.add_column('activity_logs', sa.Column('event_metadata', postgresql.JSONB(astext_type=sa.Text()), autoincrement=False, nullable=True))
     op.drop_index(op.f('ix_activity_logs_timestamp'), table_name='activity_logs')
     op.alter_column('activity_logs', 'device_id',
-               existing_type=sa.VARCHAR(length=50),
+               existing_type=sa.UUID(),
                nullable=True)
     op.alter_column('activity_logs', 'event_type',
                existing_type=sa.Enum('DEVICE_ON', 'DEVICE_OFF', 'FACE_UNLOCK', 'FORGOT_OFF', 'SCENE_ON', name='eventtype'),

@@ -19,15 +19,19 @@ import os
 import sys
 import httpx
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
+from dotenv import load_dotenv
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from src.entities.models import SuggestionLog, ActionType
 
-DB_URL        = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/smarthome")
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+
+DB_URL        = os.getenv("DATABASE_URL", "postgresql://postgres:123456@localhost:5432/smarthome")
 LLM_PROVIDER  = os.getenv("LLM_PROVIDER",  "ollama")   # "ollama" | "claude"
 OLLAMA_URL    = os.getenv("OLLAMA_URL",     "http://localhost:11434")
 OLLAMA_MODEL  = os.getenv("OLLAMA_MODEL",   "qwen2.5:3b")
@@ -205,30 +209,116 @@ def parse_llm_output(raw: str) -> dict | None:
     return None
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# MAIN FORMATTER
-# ═══════════════════════════════════════════════════════════════════════════════
+def load_decision_candidates(decision_json_path: str) -> list[dict]:
+    path = Path(decision_json_path)
+    if not path.is_absolute():
+        path = (Path(__file__).resolve().parents[1] / decision_json_path).resolve()
+    if not path.exists():
+        print(f"  [WARN] Decision JSON không tồn tại: {path}")
+        return []
 
-def format_suggestions_for_home(session: Session, home_id):
-    """Xử lý tất cả active patterns của home → sinh suggestion_logs."""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, list):
+            print(f"  [WARN] Decision JSON phải là list: {path}")
+            return []
+        return [item for item in payload if isinstance(item, dict)]
+    except Exception as exc:
+        print(f"  [WARN] Không đọc được decision JSON {path}: {exc}")
+        return []
 
-    patterns = session.execute(text("""
+
+def build_explanation_json(candidate: dict) -> dict:
+    return {
+        "decision_score": candidate.get("score"),
+        "threshold": candidate.get("threshold"),
+        "priority_score": candidate.get("priority_score"),
+        "priority_rank": candidate.get("priority_rank"),
+        "priority_reason": candidate.get("priority_reason", []),
+        "cooldown_pass": candidate.get("cooldown_pass", False),
+        "cooldown_reasons": candidate.get("cooldown_reasons", []),
+        "cooldown_signature": candidate.get("cooldown_signature"),
+        "usefulness": candidate.get("usefulness", False),
+        "usefulness_reasons": candidate.get("usefulness_reasons", []),
+        "priority_hard_override": candidate.get("priority_hard_override", False),
+    }
+
+
+def load_patterns_for_candidates(session: Session, home_id, candidates: list[dict]) -> list[dict]:
+    if not candidates:
+        return []
+
+    candidate_ids = [int(c["pattern_id"]) for c in candidates if c.get("pattern_id") is not None]
+    if not candidate_ids:
+        return []
+
+    rows = session.execute(text("""
         SELECT
             up.id, up.user_id, up.device_id, up.pattern_type,
             up.pattern_data, up.confidence,
             u.full_name
         FROM user_patterns up
         JOIN users u ON u.id = up.user_id
-        WHERE up.home_id  = :hid
-          AND up.is_active = true
-          AND up.confidence >= 0.5
-        ORDER BY up.user_id, up.pattern_type
-    """), {"hid": str(home_id)}).fetchall()
+        WHERE up.home_id = :hid
+          AND up.id = ANY(:pattern_ids)
+    """), {"hid": str(home_id), "pattern_ids": candidate_ids}).fetchall()
+
+    row_map = {int(row.id): row for row in rows}
+    ordered = []
+    candidate_order = {int(c["pattern_id"]): idx for idx, c in enumerate(candidates)}
+
+    for candidate in candidates:
+        pid = int(candidate["pattern_id"])
+        row = row_map.get(pid)
+        if not row:
+            continue
+        ordered.append({
+            "row": row,
+            "candidate": candidate,
+            "sort_key": (
+                int(candidate.get("priority_rank") or 9999),
+                candidate_order.get(pid, 9999),
+            ),
+        })
+
+    ordered.sort(key=lambda item: item["sort_key"])
+    return ordered
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MAIN FORMATTER
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def format_suggestions_for_home(session: Session, home_id, decision_candidates: list[dict] | None = None):
+    """Xử lý tất cả active patterns của home → sinh suggestion_logs."""
+
+    if decision_candidates is not None:
+        patterns = load_patterns_for_candidates(session, home_id, decision_candidates)
+    else:
+        patterns = session.execute(text("""
+            SELECT
+                up.id, up.user_id, up.device_id, up.pattern_type,
+                up.pattern_data, up.confidence,
+                u.full_name
+            FROM user_patterns up
+            JOIN users u ON u.id = up.user_id
+            WHERE up.home_id  = :hid
+              AND up.is_active = true
+              AND up.confidence >= 0.5
+            ORDER BY up.user_id, up.pattern_type
+        """), {"hid": str(home_id)}).fetchall()
 
     print(f"  Xử lý {len(patterns)} patterns...")
     created = 0
 
-    for p in patterns:
+    for item in patterns:
+        if isinstance(item, dict):
+            p = item["row"]
+            candidate = item.get("candidate", {})
+        else:
+            p = item
+            candidate = {}
+
         pattern_dict = {
             "pattern_type": p.pattern_type,
             "device_id":    p.device_id,
@@ -265,6 +355,8 @@ def format_suggestions_for_home(session: Session, home_id):
             print(f"      [SKIP] Gợi ý đã tồn tại trong 7 ngày")
             continue
 
+        explanation_json = build_explanation_json(candidate) if candidate else {}
+
         session.add(SuggestionLog(
             user_id=p.user_id,
             pattern_id=p.id,
@@ -276,6 +368,12 @@ def format_suggestions_for_home(session: Session, home_id):
                 "device_id":        p.device_id,
                 "action_type":      parsed.get("action_type"),
                 "schedule_payload": parsed.get("schedule_payload"),
+                "explanation":      explanation_json,
+                "source": {
+                    "pattern_id": int(p.id),
+                    "pattern_type": p.pattern_type,
+                    "user_name": p.full_name,
+                },
             },
             was_accepted=None,
         ))
@@ -286,6 +384,12 @@ def format_suggestions_for_home(session: Session, home_id):
 
 
 def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Format suggestions from decision candidates or active patterns")
+    parser.add_argument("--decision-json", default="", help="Optional decision layer JSON to sync formatter with")
+    args = parser.parse_args()
+
     engine = create_engine(DB_URL, echo=False)
     with Session(engine) as session:
         with session.begin():
@@ -293,9 +397,25 @@ def main():
                 text("SELECT id FROM homes WHERE is_active = true")
             ).fetchall()
 
+            candidate_index: dict[str, list[dict]] = {}
+            if args.decision_json.strip():
+                for candidate in load_decision_candidates(args.decision_json.strip()):
+                    if not candidate.get("should_suggest") or not candidate.get("cooldown_pass"):
+                        continue
+                    home_key = str(candidate.get("home_id"))
+                    candidate_index.setdefault(home_key, []).append(candidate)
+
+                for home_candidates in candidate_index.values():
+                    home_candidates.sort(key=lambda item: item.get("priority_rank") or 9999)
+
             for home_row in homes:
-                print(f"\n── Home {home_row[0]} ──")
-                format_suggestions_for_home(session, home_row[0])
+                home_id = str(home_row[0])
+                print(f"\n── Home {home_id} ──")
+                home_candidates = candidate_index.get(home_id)
+                if args.decision_json.strip() and not home_candidates:
+                    print("  [SKIP] Không có candidate đã pass cooldown cho home này")
+                    continue
+                format_suggestions_for_home(session, home_id, decision_candidates=home_candidates if args.decision_json.strip() else None)
 
     print("\n✓ Done! Kiểm tra bảng suggestion_logs.")
     print("Bước tiếp theo:")

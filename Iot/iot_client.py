@@ -106,6 +106,8 @@ DOOR_PIN = int(os.getenv("DOOR_PIN", "17"))
 DOOR_OPEN_SECONDS = float(os.getenv("DOOR_OPEN_SECONDS", "3"))
 DOOR_OPEN_ANGLE = float(os.getenv("DOOR_OPEN_ANGLE", "130"))
 DOOR_CLOSE_ANGLE = float(os.getenv("DOOR_CLOSE_ANGLE", "0"))
+DOOR_SERVO_HOLD_SECONDS = float(os.getenv("DOOR_SERVO_HOLD_SECONDS", "1.2"))
+DOOR_SERVO_RELEASE_AFTER_MOVE = os.getenv("DOOR_SERVO_RELEASE_AFTER_MOVE", "1").strip().lower() in {"1", "true", "yes", "on"}
 SERVO_MIN_DUTY = float(os.getenv("SERVO_MIN_DUTY", "2.5"))
 SERVO_MAX_DUTY = float(os.getenv("SERVO_MAX_DUTY", "12.5"))
 SERVO_FREQUENCY = float(os.getenv("SERVO_FREQUENCY", "50"))
@@ -118,6 +120,7 @@ DISTANCE_ALERT_CM = float(os.getenv("DISTANCE_ALERT_CM", "20"))
 DEVICE_LOOP_INTERVAL = float(os.getenv("DEVICE_LOOP_INTERVAL", "3"))
 DISTANCE_LIGHT_PIN = int(os.getenv("DISTANCE_LIGHT_PIN", "22"))
 GAS_PIN = int(os.getenv("GAS_PIN", "27"))
+FLAME_PIN = int(os.getenv("FLAME_PIN", "14"))
 BUZZER_PIN = int(os.getenv("BUZZER_PIN", "16"))
 RAIN_PIN = int(os.getenv("RAIN_PIN", "21"))
 RAIN_ACTIVE_LOW = os.getenv("RAIN_ACTIVE_LOW", "1").strip().lower() in {"1", "true", "yes", "on"}
@@ -138,6 +141,8 @@ LIGHT_RELAY_ACTIVE_LOW = os.getenv("LIGHT_RELAY_ACTIVE_LOW", "1").strip().lower(
 LIGHT2_RELAY_ACTIVE_LOW = os.getenv("LIGHT2_RELAY_ACTIVE_LOW", "1").strip().lower() in {"1", "true", "yes", "on"}
 DISTANCE_LIGHT_ACTIVE_LOW = os.getenv("DISTANCE_LIGHT_ACTIVE_LOW", "0").strip().lower() in {"1", "true", "yes", "on"}
 BUZZER_ACTIVE_LOW = os.getenv("BUZZER_ACTIVE_LOW", "0").strip().lower() in {"1", "true", "yes", "on"}
+FLAME_ACTIVE_LOW = os.getenv("FLAME_ACTIVE_LOW", "1").strip().lower() in {"1", "true", "yes", "on"}
+FLAME_ALERT_BUZZER = os.getenv("FLAME_ALERT_BUZZER", "1").strip().lower() in {"1", "true", "yes", "on"}
 
 FACE_UPLOAD_URL = os.getenv("FACE_UPLOAD_URL", "http://192.168.1.201:8000/face/upload")
 FACE_VERIFY_URL = os.getenv("FACE_VERIFY_URL", "http://192.168.1.201:8000/face/verify")
@@ -177,6 +182,7 @@ state = {
     "distance_alert": None,
     "distance_light": "off",
     "gas_detected": False,
+    "flame_detected": False,
     "buzzer": "off",
     "rain_detected": False,
     "rain_servo_position": None,
@@ -432,10 +438,25 @@ rain_servo_pwm = None
 last_rain_log_ts = 0.0
 last_button_state = {}
 last_button_press_ts = {}
+prev_door_state = None  # Track previous door state for logging changes
+# Thread used to keep door open while hazardous conditions persist
+safety_open_thread = None
 
 
 def log(message):
     print("[IOT] {}".format(message))
+
+
+def _log_door_state_change(new_state):
+    """Log when door state changes with timestamp and details."""
+    global prev_door_state
+    if prev_door_state != new_state:
+        log("DOOR STATUS CHANGED: {} -> {} (timestamp: {})".format(
+            prev_door_state or "unknown",
+            new_state,
+            time.strftime("%Y-%m-%d %H:%M:%S")
+        ))
+        prev_door_state = new_state
 
 
 def _is_output_active_low(pin):
@@ -476,6 +497,7 @@ def init_gpio():
     GPIO.setup(ECHO_PIN, GPIO.IN)
     GPIO.setup(DISTANCE_LIGHT_PIN, GPIO.OUT)
     GPIO.setup(GAS_PIN, GPIO.IN)
+    GPIO.setup(FLAME_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP if FLAME_ACTIVE_LOW else GPIO.PUD_DOWN)
     GPIO.setup(RAIN_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP if RAIN_ACTIVE_LOW else GPIO.PUD_DOWN)
     GPIO.setup(BUZZER_PIN, GPIO.OUT)
     GPIO.setup(
@@ -748,17 +770,31 @@ def set_rain_servo_angle(angle, hold_seconds=None):
     log("rain_servo: set {} deg (manual)".format(angle))
 
 
-def set_door_angle(angle, hold_seconds=0.5):
+def set_door_angle(angle, hold_seconds=None):
+    if hold_seconds is None:
+        hold_seconds = DOOR_SERVO_HOLD_SECONDS
     if GPIO is None or door_pwm is None:
         return
     duty = angle_to_duty(angle)
+    log(
+        "door_servo: pin={} angle={} duty={:.2f} hold={} release={}".format(
+            DOOR_PIN,
+            angle,
+            duty,
+            hold_seconds,
+            DOOR_SERVO_RELEASE_AFTER_MOVE,
+        )
+    )
     door_pwm.ChangeDutyCycle(duty)
     time.sleep(hold_seconds)
-    door_pwm.ChangeDutyCycle(0)
+    if DOOR_SERVO_RELEASE_AFTER_MOVE:
+        door_pwm.ChangeDutyCycle(0)
 
 
 def close_door():
+    old_state = state["door"]
     state["door"] = "closed"
+    _log_door_state_change("closed")
     if GPIO is None:
         log("door_close: simulation {} deg".format(DOOR_CLOSE_ANGLE))
         return
@@ -767,7 +803,7 @@ def close_door():
 
 
 def publish_status(client):
-    log("publish_status")
+    log("publish_status flame_detected={}".format(state["flame_detected"]))
     payload = {
         "den_khach": state["den_khach"],
         "den_ngu": state["den_ngu"],
@@ -789,8 +825,11 @@ def publish_status(client):
         "humidity": state["humidity"],
         "distance_light": state["distance_light"],
         "gas_detected": state["gas_detected"],
+        "flame_detected": state["flame_detected"],
         "buzzer": state["buzzer"],
         "rain_detected": state["rain_detected"],
+        "rain_servo_position": state["rain_servo_position"],
+        "rain_servo_angle": state["rain_servo_angle"],
         "door": state["door"],
         "timestamp": int(time.time()),
     }
@@ -805,8 +844,11 @@ def publish_sensors(client):
         "distance_alert": state["distance_alert"],
         "distance_light": state["distance_light"],
         "gas_detected": state["gas_detected"],
+        "flame_detected": state["flame_detected"],
         "buzzer": state["buzzer"],
         "rain_detected": state["rain_detected"],
+        "rain_servo_position": state["rain_servo_position"],
+        "rain_servo_angle": state["rain_servo_angle"],
         "timestamp": int(time.time()),
     }
     # Sensors are published on legacy topic only for now.
@@ -878,8 +920,78 @@ def read_gas():
     set_buzzer_state(gas_detected)
     if gas_detected:
         log("read_gas: GAS DETECTED -> buzzer on")
+        try:
+            _open_door_until_safe()
+        except Exception:
+            pass
     else:
         log("read_gas: no gas detected -> buzzer off")
+
+
+def read_flame():
+    if GPIO is None:
+        return
+
+    raw_value = GPIO.input(FLAME_PIN)
+    flame_detected = raw_value == GPIO.LOW if FLAME_ACTIVE_LOW else raw_value == GPIO.HIGH
+    prev_flame_detected = state["flame_detected"]
+    state["flame_detected"] = flame_detected
+    
+    if flame_detected != prev_flame_detected:
+        if flame_detected and FLAME_ALERT_BUZZER:
+            set_buzzer_state(True)
+            log("read_flame: FLAME DETECTED -> buzzer on (pin={}, active_low={})".format(FLAME_PIN, FLAME_ACTIVE_LOW))
+            try:
+                _open_door_until_safe()
+            except Exception:
+                pass
+        elif not flame_detected and not state["gas_detected"] and FLAME_ALERT_BUZZER:
+            set_buzzer_state(False)
+            log("read_flame: flame no longer detected -> buzzer off")
+    
+    if flame_detected != prev_flame_detected:
+        log("read_flame: state changed -> {} (raw={}, pin={}, active_low={})".format(
+            "FLAME DETECTED" if flame_detected else "NO FLAME",
+            raw_value,
+            FLAME_PIN,
+            FLAME_ACTIVE_LOW,
+        ))
+
+
+def _open_door_until_safe():
+    """Open the door and keep it open until both flame and gas sensors are clear.
+
+    Runs in a background thread and avoids starting multiple concurrent safety threads.
+    """
+    global safety_open_thread
+
+    def _worker():
+        with door_lock:
+            state["door"] = "open"
+            _log_door_state_change("open")
+            if GPIO is None:
+                log("door_open_safety: simulation (waiting until sensors clear)")
+            else:
+                log("door_open_safety: opening door for safety")
+                set_door_angle(DOOR_OPEN_ANGLE)
+
+        try:
+            # Wait until both sensors report no hazard or stop_event is set
+            while not stop_event.is_set() and (state.get("flame_detected") or state.get("gas_detected")):
+                time.sleep(0.5)
+        finally:
+            # Close the door once safe
+            try:
+                close_door()
+            except Exception as exc:
+                log("door_open_safety: error while closing door: {}".format(exc))
+
+    # Avoid starting multiple threads
+    if safety_open_thread is not None and safety_open_thread.is_alive():
+        return
+
+    safety_open_thread = threading.Thread(target=_worker, daemon=True)
+    safety_open_thread.start()
 
 
 def apply_command(command):
@@ -975,6 +1087,38 @@ def apply_command(command):
             close_door()
         return
 
+    if cmd in {
+        "rain servo open",
+        "rain_servo open",
+        "rainservo open",
+        "sky window open",
+        "roof window open",
+        "cua so troi open",
+        "mai che open",
+    }:
+        set_rain_servo_by_weather(True)
+        return
+
+    if cmd in {
+        "rain servo close",
+        "rain_servo close",
+        "rainservo close",
+        "sky window close",
+        "roof window close",
+        "cua so troi close",
+        "mai che close",
+    }:
+        set_rain_servo_by_weather(False)
+        return
+
+    for prefix in ("rain servo angle ", "rain_servo angle ", "rainservo angle "):
+        if cmd.startswith(prefix):
+            try:
+                set_rain_servo_angle(float(cmd[len(prefix):].strip()))
+            except ValueError:
+                log("rain_servo: invalid angle command '{}'".format(command))
+            return
+
     if cmd == "status":
         return
 
@@ -982,15 +1126,24 @@ def apply_command(command):
 def _open_door_async():
     if GPIO is None:
         state["door"] = "open"
-        log("door_open: simulation {} deg".format(DOOR_OPEN_ANGLE))
+        _log_door_state_change("open")
+        log("door_open: simulation {} deg (will auto-close after {} seconds)".format(
+            DOOR_OPEN_ANGLE,
+            DOOR_OPEN_SECONDS
+        ))
         time.sleep(DOOR_OPEN_SECONDS)
         state["door"] = "closed"
+        _log_door_state_change("closed")
         return
 
     def _rotate() -> None:
         with door_lock:
             state["door"] = "open"
-            log("door_open: {} deg".format(DOOR_OPEN_ANGLE))
+            _log_door_state_change("open")
+            log("door_open: {} deg (face verification success - will auto-close after {} seconds)".format(
+                DOOR_OPEN_ANGLE,
+                DOOR_OPEN_SECONDS
+            ))
             set_door_angle(DOOR_OPEN_ANGLE)
             time.sleep(DOOR_OPEN_SECONDS)
             close_door()
@@ -1066,12 +1219,13 @@ def on_message(client, userdata, msg):
     publish_device_statuses(client)
     publish_status(client)
     log(
-        "Command '{}' applied. DenKhach={}, DenNgu={}, QuatKhach={}, QuatNgu={}.".format(
+        "Command '{}' applied. DenKhach={}, DenNgu={}, QuatKhach={}, QuatNgu={}, FlameDetected={}.".format(
             command_to_apply,
             state["den_khach"],
             state["den_ngu"],
             state["quat_khach"],
             state["quat_ngu"],
+            state["flame_detected"],
         )
     )
 
@@ -1161,10 +1315,10 @@ def capture_face_jpeg(
                     time.sleep(0.03)
                     continue
 
-                # Picamera2 tr? v? RGB, d?i sang BGR d? x? lý màu dúng trong OpenCV.
+                # Picamera2 tr? v? RGB, d?i sang BGR d? x? lÃ½ mÃ u dÃºng trong OpenCV.
                 frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
-                # X? lý tang sáng/cân b?ng màu
+                # X? lÃ½ tang sÃ¡ng/cÃ¢n b?ng mÃ u
                 frame = enhance_face_image(frame)
                 success, buffer = cv2.imencode(
                     ".jpg",
@@ -1207,7 +1361,7 @@ def capture_face_jpeg(
 
                 image = frame.array
                 raw_capture.truncate(0)
-                # X? lý tang sáng/cân b?ng màu
+                # X? lÃ½ tang sÃ¡ng/cÃ¢n b?ng mÃ u
                 image = enhance_face_image(image)
                 success, buffer = cv2.imencode(
                     ".jpg",
@@ -1234,7 +1388,7 @@ def capture_face_jpeg(
                 time.sleep(0.05)
                 continue
 
-            # X? lý tang sáng/cân b?ng màu
+            # X? lÃ½ tang sÃ¡ng/cÃ¢n b?ng mÃ u
             frame = enhance_face_image(frame)
             success, buffer = cv2.imencode(
                 ".jpg",
@@ -1250,10 +1404,10 @@ def capture_face_jpeg(
 
 
 def enhance_face_image(img):
-    # 1) Kh? nhi?u nh?, tránh m?t chi ti?t.
+    # 1) Kh? nhi?u nh?, trÃ¡nh m?t chi ti?t.
     denoised = cv2.GaussianBlur(img, (3, 3), 0)
 
-    # 2) Cân b?ng tr?ng nh? theo kênh a/b trong LAB.
+    # 2) CÃ¢n b?ng tr?ng nh? theo kÃªnh a/b trong LAB.
     lab = cv2.cvtColor(denoised, cv2.COLOR_BGR2LAB)
     l_channel, a_channel, b_channel = cv2.split(lab)
     avg_a = float(cv2.mean(a_channel)[0])
@@ -1262,14 +1416,14 @@ def enhance_face_image(img):
     b_channel = cv2.addWeighted(b_channel, 1.0, b_channel, 0.0, -(avg_b - 128.0) * 0.4)
     wb = cv2.cvtColor(cv2.merge((l_channel, a_channel, b_channel)), cv2.COLOR_LAB2BGR)
 
-    # 2.1) N?u ?nh ám xanh m?nh thì gi?m nh? kênh xanh.
+    # 2.1) N?u ?nh Ã¡m xanh m?nh thÃ¬ gi?m nh? kÃªnh xanh.
     b_mean, g_mean, r_mean, _ = cv2.mean(wb)
     if g_mean > (r_mean * 1.15) and g_mean > (b_mean * 1.12):
         b_channel, g_channel, r_channel = cv2.split(wb)
         g_channel = cv2.convertScaleAbs(g_channel, alpha=0.9, beta=0)
         wb = cv2.merge((b_channel, g_channel, r_channel))
 
-    # 3) Tang sáng/tuong ph?n nh? theo m?c t?i d? tránh l?i LUT trên OpenCV cu.
+    # 3) Tang sÃ¡ng/tuong ph?n nh? theo m?c t?i d? trÃ¡nh l?i LUT trÃªn OpenCV cu.
     gray = cv2.cvtColor(wb, cv2.COLOR_BGR2GRAY)
     luminance = float(cv2.mean(gray)[0])
     if luminance < 70:
@@ -1283,7 +1437,7 @@ def enhance_face_image(img):
         beta = 8
     bright = cv2.convertScaleAbs(wb, alpha=alpha, beta=beta)
 
-    # 4) Nét nh?, tránh halo.
+    # 4) NÃ©t nh?, trÃ¡nh halo.
     blur = cv2.GaussianBlur(bright, (0, 0), 0.8)
     return cv2.addWeighted(bright, 1.08, blur, -0.08, 0)
 
@@ -1291,17 +1445,13 @@ def enhance_face_image(img):
 def device_loop(client):
     next_sensor_ts = 0.0
     while not stop_event.is_set():
-        button_changed = read_buttons()
-        if button_changed and client is not None:
-            publish_device_statuses(client)
-            publish_status(client)
-
         now = time.monotonic()
         if now >= next_sensor_ts:
             log("device_loop tick")
             read_dht()
             read_distance()
             read_gas()
+            read_flame()
             read_rain()
 
             if client is not None:
@@ -1310,6 +1460,21 @@ def device_loop(client):
                 publish_sensors(client)
             next_sensor_ts = now + DEVICE_LOOP_INTERVAL
 
+        time.sleep(BUTTON_POLL_INTERVAL_SECONDS)
+
+
+def button_loop(client):
+    log(
+        "button_loop start interval={}s debounce={}s".format(
+            BUTTON_POLL_INTERVAL_SECONDS,
+            BUTTON_DEBOUNCE_SECONDS,
+        )
+    )
+    while not stop_event.is_set():
+        button_changed = read_buttons()
+        if button_changed and client is not None:
+            publish_device_statuses(client)
+            publish_status(client)
         time.sleep(BUTTON_POLL_INTERVAL_SECONDS)
 
 
@@ -1359,7 +1524,6 @@ def publish_face_image(client, action, image_bytes, person_id=None):
     }
     if person_id:
         payload["person_id"] = person_id
-
     topic = build_home_face_topic(HOME_ID)
     info = client.publish(topic, json.dumps(payload), qos=1, retain=False)
     if mqtt is not None and info.rc != mqtt.MQTT_ERR_SUCCESS:
@@ -1389,13 +1553,11 @@ def face_send_loop(client):
                 if now - last_verify_ts < FACE_VERIFY_COOLDOWN:
                     log("face_verify: cooldown")
                     continue
-                log("face_verify: publishing to mqtt")
+                log("face_verify: publishing to mqtt for verification")
                 if publish_face_image(client, "verify", image_bytes):
                     last_verify_ts = now
                     log(
-                        "face_verify: published -> expect door command on {}".format(
-                            build_device_command_topic(get_door_device_id())
-                        )
+                        "face_verify: Face image sent to backend. Waiting for verification result and automatic door unlock..."
                     )
             else:
                 log("face_upload: publishing to mqtt")
@@ -1429,6 +1591,7 @@ def main():
     client = build_mqtt_client()
 
     threads = [
+        threading.Thread(target=button_loop, args=(client,), daemon=True),
         threading.Thread(target=device_loop, args=(client,), daemon=True),
         threading.Thread(target=face_capture_loop, daemon=True),
         threading.Thread(target=face_send_loop, args=(client,), daemon=True),
@@ -1436,6 +1599,10 @@ def main():
 
     for thread in threads:
         thread.start()
+
+    # Initialize door state tracking
+    global prev_door_state
+    prev_door_state = state["door"]
 
     try:
         while True:

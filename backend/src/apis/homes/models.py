@@ -25,7 +25,7 @@ class HomeResponse(BaseModel):
     class Config:
         from_attributes = True
 
-class HomeMemberResponse(BaseModel):
+class HomeUserResponse(BaseModel):
     id: str
     user_id: str
     email: str

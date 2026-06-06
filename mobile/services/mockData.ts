@@ -17,8 +17,6 @@ export interface Home {
     roomCount: number;
     deviceCount: number;
     activeDevices: number;
-    energyToday: number; // kWh
-    energyYesterday: number;
 }
 
 export interface Room {
@@ -28,7 +26,6 @@ export interface Room {
     icon: string;
     deviceCount: number;
     activeDevices: number;
-    energyToday: number;
     isOnline: boolean;
 }
 
@@ -97,11 +94,6 @@ export interface ChatMessage {
     deviceCard?: Device;
 }
 
-export interface EnergyDataPoint {
-    label: string;
-    value: number;
-}
-
 // ===== MOCK DATA =====
 
 export const mockUser: User = {
@@ -117,17 +109,15 @@ export const mockHome: Home = {
     roomCount: 6,
     deviceCount: 24,
     activeDevices: 8,
-    energyToday: 12.4,
-    energyYesterday: 11.1,
 };
 
 export const mockRooms: Room[] = [
-    { id: '1', homeId: '1', name: 'Phòng khách', icon: 'tv', deviceCount: 6, activeDevices: 3, energyToday: 3.2, isOnline: true },
-    { id: '2', homeId: '1', name: 'Phòng ngủ', icon: 'moon', deviceCount: 4, activeDevices: 1, energyToday: 1.8, isOnline: true },
-    { id: '3', homeId: '1', name: 'Nhà bếp', icon: 'coffee', deviceCount: 5, activeDevices: 2, energyToday: 4.1, isOnline: true },
-    { id: '4', homeId: '1', name: 'Phòng tắm', icon: 'droplet', deviceCount: 3, activeDevices: 0, energyToday: 0.6, isOnline: true },
-    { id: '5', homeId: '1', name: 'Ban công', icon: 'sun', deviceCount: 3, activeDevices: 1, energyToday: 0.4, isOnline: true },
-    { id: '6', homeId: '1', name: 'Garage', icon: 'truck', deviceCount: 3, activeDevices: 1, energyToday: 2.3, isOnline: false },
+    { id: '1', homeId: '1', name: 'Phòng khách', icon: 'tv', deviceCount: 6, activeDevices: 3, isOnline: true },
+    { id: '2', homeId: '1', name: 'Phòng ngủ', icon: 'moon', deviceCount: 4, activeDevices: 1, isOnline: true },
+    { id: '3', homeId: '1', name: 'Nhà bếp', icon: 'coffee', deviceCount: 5, activeDevices: 2, isOnline: true },
+    { id: '4', homeId: '1', name: 'Phòng tắm', icon: 'droplet', deviceCount: 3, activeDevices: 0, isOnline: true },
+    { id: '5', homeId: '1', name: 'Ban công', icon: 'sun', deviceCount: 3, activeDevices: 1, isOnline: true },
+    { id: '6', homeId: '1', name: 'Garage', icon: 'truck', deviceCount: 3, activeDevices: 1, isOnline: false },
 ];
 
 export const mockDevices: Record<string, Device[]> = {
@@ -173,13 +163,11 @@ export const mockAutomations: Automation[] = [
     { id: 'a1', name: 'Chế độ đi ngủ', isEnabled: true, conditionSummary: 'Sau 22:00', actionSummary: 'Tắt toàn bộ đèn, giảm AC xuống 24°C', icon: 'moon', lastRun: '22:00 hôm qua' },
     { id: 'a2', name: 'Chào buổi sáng', isEnabled: true, conditionSummary: 'Lúc 06:30', actionSummary: 'Bật đèn phòng khách, mở rèm', icon: 'sunrise', lastRun: '06:30 hôm nay' },
     { id: 'a3', name: 'Rời khỏi nhà', isEnabled: true, conditionSummary: 'Không phát hiện chuyển động 30 phút', actionSummary: 'Tắt tất cả thiết bị, khóa cửa', icon: 'log-out', lastRun: '08:15 hôm nay' },
-    { id: 'a4', name: 'Tiết kiệm điện', isEnabled: false, conditionSummary: 'Điện năng > 15 kWh/ngày', actionSummary: 'Tắt thiết bị không cần thiết', icon: 'zap', lastRun: 'Chưa kích hoạt' },
     { id: 'a5', name: 'An ninh ban đêm', isEnabled: true, conditionSummary: 'Sau 23:00', actionSummary: 'Bật camera, khóa tất cả cửa', icon: 'shield', lastRun: '23:00 hôm qua' },
 ];
 
 export const mockAIInsights: AIInsight[] = [
     { id: 'ai1', message: 'Phòng khách đang bật đèn 4 giờ liên tục. Bạn có muốn tắt không?', type: 'suggestion', icon: 'zap' },
-    { id: 'ai2', message: 'Điện năng hôm nay tăng 12% so với hôm qua.', type: 'warning', icon: 'trending-up' },
     { id: 'ai3', message: 'Cửa trước chưa khóa. Khuyến nghị khóa ngay.', type: 'warning', icon: 'alert-triangle' },
 ];
 
@@ -197,35 +185,6 @@ export const mockChatMessages: ChatMessage[] = [
     { id: 'c3', text: 'Đã tắt đèn phòng ngủ cho bạn.', isUser: false, timestamp: '14:01' },
 ];
 
-export const mockEnergyDaily: EnergyDataPoint[] = [
-    { label: '0h', value: 0.2 },
-    { label: '3h', value: 0.1 },
-    { label: '6h', value: 0.8 },
-    { label: '9h', value: 2.1 },
-    { label: '12h', value: 3.5 },
-    { label: '15h', value: 2.8 },
-    { label: '18h', value: 1.9 },
-    { label: '21h', value: 1.0 },
-];
-
-export const mockEnergyWeekly: EnergyDataPoint[] = [
-    { label: 'T2', value: 11.2 },
-    { label: 'T3', value: 12.8 },
-    { label: 'T4', value: 10.5 },
-    { label: 'T5', value: 13.1 },
-    { label: 'T6', value: 11.8 },
-    { label: 'T7', value: 14.2 },
-    { label: 'CN', value: 12.4 },
-];
-
-export const mockEnergyMonthly: EnergyDataPoint[] = [
-    { label: 'T1', value: 320 },
-    { label: 'T2', value: 290 },
-    { label: 'T3', value: 310 },
-    { label: 'T4', value: 280 },
-    { label: 'T5', value: 340 },
-    { label: 'T6', value: 360 },
-];
 
 export const quickCommands = [
     'Tắt đèn phòng ngủ',

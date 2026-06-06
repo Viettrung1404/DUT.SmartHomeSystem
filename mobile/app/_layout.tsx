@@ -23,6 +23,14 @@ function InnerLayout() {
           options={{ animation: 'slide_from_right' }}
         />
         <Stack.Screen
+          name="room/[id]/manage"
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="rooms/manage"
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
           name="device/[id]"
           options={{ animation: 'slide_from_bottom', presentation: 'modal' }}
         />
@@ -31,11 +39,27 @@ function InnerLayout() {
           options={{ animation: 'slide_from_bottom', presentation: 'modal' }}
         />
         <Stack.Screen
-          name="energy"
+          name="quick-actions/[action]"
           options={{ animation: 'slide_from_right' }}
         />
         <Stack.Screen
-          name="settings"
+          name="settings/index"
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="settings/home"
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="settings/account"
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="settings/connectivity"
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="settings/about"
           options={{ animation: 'slide_from_right' }}
         />
       </Stack>

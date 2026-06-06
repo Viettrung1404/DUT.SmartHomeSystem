@@ -38,7 +38,9 @@ function getDeviceIcon(type: string): keyof typeof Feather.glyphMap {
     const iconMap: Record<string, keyof typeof Feather.glyphMap> = {
         light: 'sun',
         fan: 'wind',
-        door: 'door-open',
+        door: 'unlock',
+        lock: 'lock',
+        curtain: 'columns',
         buzzer: 'bell',
         distance_light: 'activity',
         temperature_humidity: 'thermometer',
@@ -78,7 +80,7 @@ const readOnlyTypes = new Set([
     'sensor',
 ]);
 
-const noToggleTypes = new Set(['door', 'rain_servo']);
+const noToggleTypes = new Set(['door', 'lock', 'curtain', 'rain_servo']);
 
 function mapDevice(response: DeviceResponse): DeviceViewModel {
     const normalizedType = response.type?.toLowerCase?.() ?? response.type;
@@ -264,9 +266,11 @@ export default function DeviceDetailScreen() {
                 )}
 
                 {/* Door Controls */}
-                {device.type === 'door' && (
+                {(device.type === 'door' || device.type === 'lock' || device.type === 'curtain') && (
                     <Card style={{ marginBottom: Spacing.md }}>
-                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Cua</Text>
+                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>
+                            {device.type === 'curtain' ? 'Rem' : 'Cua / Khoa'}
+                        </Text>
                         <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
                             {[
                                 { label: 'Mo', value: 'open' },
@@ -410,6 +414,8 @@ export default function DeviceDetailScreen() {
                                 device.type === 'light' ? 'Den'
                                     : device.type === 'fan' ? 'Quat'
                                         : device.type === 'door' ? 'Cua'
+                                            : device.type === 'lock' ? 'Khoa'
+                                                : device.type === 'curtain' ? 'Rem'
                                             : device.type === 'buzzer' ? 'Coi'
                                                 : device.type === 'distance_light' ? 'Den khoang cach'
                                                     : device.type === 'temperature_humidity' ? 'Nhiet do / Do am'

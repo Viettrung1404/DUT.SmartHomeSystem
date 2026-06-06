@@ -14,7 +14,6 @@ export interface RoomCardModel {
     isOnline: boolean;
     activeDevices: number;
     deviceCount: number;
-    energyToday: number;
 }
 
 interface RoomCardProps {
@@ -24,7 +23,9 @@ interface RoomCardProps {
 
 export function RoomCard({ room, onPress }: RoomCardProps) {
     const { colors } = useTheme();
-    const iconName = (room.icon || 'home') as keyof typeof Feather.glyphMap;
+    const iconName = room.icon && room.icon in Feather.glyphMap
+        ? (room.icon as keyof typeof Feather.glyphMap)
+        : 'home';
 
     return (
         <Card onPress={() => onPress(room)} style={{ flex: 1 }}>
@@ -52,13 +53,6 @@ export function RoomCard({ room, onPress }: RoomCardProps) {
                 <Feather name="cpu" size={12} color={colors.textTertiary} />
                 <Text style={[Typography.caption, { color: colors.textSecondary }]}>
                     {room.activeDevices}/{room.deviceCount} thiết bị
-                </Text>
-            </View>
-
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginTop: Spacing.xs }}>
-                <Feather name="zap" size={12} color={colors.warning} />
-                <Text style={[Typography.caption, { color: colors.textSecondary }]}>
-                    {room.energyToday} kWh
                 </Text>
             </View>
         </Card>

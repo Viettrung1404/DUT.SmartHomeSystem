@@ -8,14 +8,14 @@ import {
   ActivityIndicator,
   StyleSheet,
 } from 'react-native';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { SuggestionResponse, suggestionsAPI } from '@/services/api';
+import { Feather } from '@expo/vector-icons';
 
 export default function SuggestionsScreen() {
-  const colorScheme = useColorScheme();
+  const { colors } = useTheme();
   const [suggestions, setSuggestions] = useState<SuggestionResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -45,7 +45,7 @@ export default function SuggestionsScreen() {
   const handleAcceptSuggestion = async (suggestionId: number, accept: boolean) => {
     try {
       await suggestionsAPI.accept(suggestionId, accept);
-      setSuggestions(suggestions.filter(s => s.id !== suggestionId));
+      setSuggestions(suggestions.filter((s) => s.id !== suggestionId));
     } catch (error) {
       console.error('Failed to accept suggestion:', error);
     }
@@ -54,13 +54,13 @@ export default function SuggestionsScreen() {
   const getActionTypeColor = (type: string) => {
     switch (type) {
       case 'SCHEDULE':
-        return '#4CAF50'; // Green
+        return colors.success;
       case 'ALERT':
-        return '#FF9800'; // Orange
+        return colors.warning;
       case 'AUTOMATION':
-        return '#2196F3'; // Blue
+        return colors.primary;
       default:
-        return '#9E9E9E'; // Gray
+        return colors.textSecondary;
     }
   };
 
@@ -77,11 +77,21 @@ export default function SuggestionsScreen() {
     }
   };
 
+  const getSuggestionIcon = (suggestion: SuggestionResponse): keyof typeof Feather.glyphMap => {
+    const text = `${suggestion.suggestion_json?.title ?? ''} ${suggestion.suggestion_text ?? ''}`.toLowerCase();
+    if (text.includes('phòng') || text.includes('phong')) return 'grid';
+    if (text.includes('nhà') || text.includes('nha')) return 'home';
+    if (suggestion.action_type === 'AUTOMATION') return 'zap';
+    if (suggestion.action_type === 'SCHEDULE') return 'clock';
+    if (suggestion.action_type === 'ALERT') return 'alert-triangle';
+    return 'info';
+  };
+
   if (loading) {
     return (
       <ThemedView style={styles.container}>
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color={Colors[colorScheme ?? 'light'].tint} />
+          <ActivityIndicator size="large" color={colors.primary} />
           <ThemedText style={styles.loadingText}>Đang tải gợi ý...</ThemedText>
         </View>
       </ThemedView>
@@ -109,17 +119,26 @@ export default function SuggestionsScreen() {
           </View>
         ) : (
           suggestions.map((suggestion) => (
-            <View key={suggestion.id} style={styles.card}>
+            <View
+              key={suggestion.id}
+              style={[styles.card, { backgroundColor: colors.card, borderLeftColor: colors.primary }]}
+            >
               <View style={styles.cardHeader}>
-                <View
-                  style={[
-                    styles.badge,
-                    { backgroundColor: getActionTypeColor(suggestion.action_type) },
-                  ]}
-                >
-                  <Text style={styles.badgeText}>
-                    {getActionTypeLabel(suggestion.action_type)}
-                  </Text>
+                <View style={styles.headerLeft}>
+                  <View style={[styles.iconBubble, { backgroundColor: colors.primaryLight }]}
+                  >
+                    <Feather name={getSuggestionIcon(suggestion)} size={16} color={colors.primary} />
+                  </View>
+                  <View
+                    style={[
+                      styles.badge,
+                      { backgroundColor: getActionTypeColor(suggestion.action_type) },
+                    ]}
+                  >
+                    <Text style={styles.badgeText}>
+                      {getActionTypeLabel(suggestion.action_type)}
+                    </Text>
+                  </View>
                 </View>
                 <ThemedText style={styles.timestamp}>
                   {new Date(suggestion.created_at).toLocaleDateString('vi-VN')}
@@ -136,14 +155,14 @@ export default function SuggestionsScreen() {
 
               <View style={styles.actions}>
                 <Pressable
-                  style={[styles.button, styles.rejectButton]}
+                  style={[styles.button, styles.rejectButton, { backgroundColor: colors.surface }]}
                   onPress={() => handleAcceptSuggestion(suggestion.id, false)}
                 >
                   <ThemedText style={styles.buttonText}>Bỏ qua</ThemedText>
                 </Pressable>
 
                 <Pressable
-                  style={[styles.button, styles.acceptButton]}
+                  style={[styles.button, styles.acceptButton, { backgroundColor: colors.primary }]}
                   onPress={() => handleAcceptSuggestion(suggestion.id, true)}
                 >
                   <ThemedText style={[styles.buttonText, styles.acceptButtonText]}>
@@ -197,15 +216,25 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
-    backgroundColor: '#f5f5f5',
     borderLeftWidth: 4,
-    borderLeftColor: '#2196F3',
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  iconBubble: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   badge: {
     paddingHorizontal: 10,
@@ -243,12 +272,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  rejectButton: {
-    backgroundColor: '#e0e0e0',
-  },
-  acceptButton: {
-    backgroundColor: '#2196F3',
-  },
+  rejectButton: {},
+  acceptButton: {},
   buttonText: {
     fontSize: 14,
     fontWeight: '600',
