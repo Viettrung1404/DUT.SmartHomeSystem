@@ -43,6 +43,23 @@ async def enroll_face(request: Request, payload: models.FaceEnrollRequest):
     )
 
 
+@router.post("/enroll/batch", response_model=models.FaceEnrollBatchResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("10/minute")
+async def enroll_face_batch(request: Request, payload: models.FaceEnrollBatchRequest):
+    saved_count, deleted_count, image_paths, reason = service.replace_face_gallery(
+        payload.home_id,
+        payload.person_id,
+        payload.images_base64,
+    )
+    return models.FaceEnrollBatchResponse(
+        saved_count=saved_count,
+        deleted_count=deleted_count,
+        person_id=payload.person_id,
+        image_paths=image_paths,
+        reason=reason,
+    )
+
+
 @router.post("/upload", response_model=models.FaceUploadResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("120/minute")
 async def upload_face(request: Request, payload: models.FaceUploadRequest):
