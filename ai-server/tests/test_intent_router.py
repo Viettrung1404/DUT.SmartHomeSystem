@@ -13,11 +13,22 @@ def test_suggestion_explain_intent():
     assert result.device_hint == "den bep"
 
 
+def test_suggestion_explain_mojibake_tolerant():
+    result = classify_intent("T?i sao app g?i ? t?t ??n b?p?")
+    assert result.intent == "SUGGESTION_EXPLAIN"
+
+
 def test_device_history_intent():
     result = classify_intent("Dieu hoa phong ngu tuan nay chay may lan?")
     assert result.intent == "DEVICE_HISTORY"
     assert result.device_hint == "dieu hoa phong ngu"
     assert result.time_range == "this_week"
+
+
+def test_activity_duration_question_is_not_device_command():
+    result = classify_intent("Thiết bị nào hoạt động lâu nhất hôm qua?")
+    assert result.intent == "DEVICE_HISTORY"
+    assert result.time_range == "yesterday"
 
 
 def test_forgot_off_intent():
@@ -35,3 +46,9 @@ def test_follow_up_needs_memory():
 def test_device_command_intent():
     result = classify_intent("Tat den bep")
     assert result.intent == "DEVICE_COMMAND"
+
+
+def test_accented_ac_command_extracts_device_hint():
+    result = classify_intent("Tắt điều hòa")
+    assert result.intent == "DEVICE_COMMAND"
+    assert result.device_hint == "dieu hoa"

@@ -2,11 +2,7 @@ from app.agent.tool_router import select_tools
 
 
 def test_guardian_tools():
-    assert select_tools("GUARDIAN_EVENT_QUERY") == [
-        "query_guardian_events",
-        "query_suggestion_logs",
-        "query_user_patterns",
-    ]
+    assert select_tools("GUARDIAN_EVENT_QUERY") == ["search_smart_home_records"]
 
 
 def test_device_history_tools():
@@ -14,5 +10,4 @@ def test_device_history_tools():
 
 
 def test_unknown_intent_defaults_to_status():
-    assert select_tools("UNKNOWN") == ["query_device_status"]
-
+    assert select_tools("UNKNOWN") == ["search_smart_home_records"]

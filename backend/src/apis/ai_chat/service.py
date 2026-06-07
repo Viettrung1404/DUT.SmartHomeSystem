@@ -25,7 +25,7 @@ async def forward_chat(payload: dict) -> dict:
         headers["X-API-Key"] = AI_SERVER_API_KEY
 
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
+        async with httpx.AsyncClient(timeout=90) as client:
             response = await client.post(
                 f"{AI_SERVER_URL.rstrip('/')}/v1/chat",
                 json=payload,
@@ -64,4 +64,3 @@ async def reset_memory(payload: dict) -> dict:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Trợ lý AI hiện chưa sẵn sàng, vui lòng thử lại sau.",
         ) from exc
-

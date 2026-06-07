@@ -12,7 +12,8 @@ class IntentResult:
 
 
 def _normalize(text: str) -> str:
-    text = unicodedata.normalize("NFD", text.lower())
+    text = text.lower().replace("đ", "d")
+    text = unicodedata.normalize("NFD", text)
     text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
     return re.sub(r"\s+", " ", text).strip()
 
@@ -28,11 +29,11 @@ def classify_intent(message: str) -> IntentResult:
         intent = "FORGOT_OFF_QUERY"
     elif any(word in normalized for word in ["bat thuong", "canh bao", "nguy hiem", "bao dong", "an ninh"]):
         intent = "GUARDIAN_EVENT_QUERY"
-    elif any(word in normalized for word in ["tai sao", "vi sao", "goi y", "de xuat"]):
+    elif any(word in normalized for word in ["tai sao", "t?i sao", "vi sao", "sao app", "goi y", "g?i", "de xuat"]):
         intent = "SUGGESTION_EXPLAIN"
     elif any(word in normalized for word in ["trang thai", "dang bat", "dang tat", "online", "offline"]):
         intent = "DEVICE_STATUS_QUERY"
-    elif any(word in normalized for word in ["bao lau", "may lan", "lich su", "chay nhieu", "su dung"]):
+    elif any(word in normalized for word in ["bao lau", "may lan", "lich su", "chay nhieu", "su dung", "hoat dong", "lau nhat"]):
         intent = "DEVICE_HISTORY"
     elif _looks_like_direct_command(normalized):
         intent = "DEVICE_COMMAND"
@@ -50,10 +51,28 @@ def classify_intent(message: str) -> IntentResult:
 
 
 def _looks_like_direct_command(normalized: str) -> bool:
-    if any(phrase in normalized for phrase in ["tai sao", "vi sao", "goi y", "quen tat", "bat thuong", "canh bao"]):
+    if any(
+        phrase in normalized
+        for phrase in [
+            "tai sao",
+            "vi sao",
+            "goi y",
+            "quen tat",
+            "bat thuong",
+            "canh bao",
+            "hoat dong",
+            "lau nhat",
+            "thiet bi nao",
+            "bao lau",
+            "may lan",
+            "lich su",
+        ]
+    ):
         return False
     words = set(re.sub(r"[^\w\s]", " ", normalized).split())
-    return bool({"tat", "bat", "off", "on", "khoa", "lock", "unlock", "mo", "dong", "open", "close"} & words)
+    if {"tat", "bat", "off", "on", "khoa", "lock", "unlock", "mo", "open", "close"} & words:
+        return True
+    return normalized.startswith("dong ") or " dong cua" in f" {normalized}"
 
 
 def _extract_time_range(normalized: str) -> str | None:
@@ -73,10 +92,14 @@ def _extract_time_range(normalized: str) -> str | None:
 def _extract_device_hint(normalized: str) -> str | None:
     candidates = [
         "den bep",
+        "den phong ngu",
         "den phong khach",
         "dieu hoa phong ngu",
+        "dieu hoa phong khach",
         "dieu hoa",
         "may lanh",
+        "quat phong ngu",
+        "quat phong khach",
         "cua chinh",
         "den",
         "quat",
