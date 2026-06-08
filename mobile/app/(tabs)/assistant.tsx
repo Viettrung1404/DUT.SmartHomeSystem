@@ -17,6 +17,7 @@ import { BorderRadius, Spacing } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
 import { useTheme } from '@/contexts/ThemeContext';
 import { aiChatAPI, homesAPI } from '@/services/api';
+import { useVoice } from '@/hooks/useVoice';
 
 const quickCommands = [
     'Tối qua nhà tôi có gì bất thường không?',
@@ -71,6 +72,30 @@ export default function AssistantScreen() {
     const flatListRef = useRef<FlatList>(null);
     const sessionId = useMemo(() => `mobile-ai-${Date.now()}`, []);
 
+    const handleTranscriptReceived = (text: string) => {
+        const cleaned = text.trim();
+        if (cleaned.length < 2) {
+            // Transcript quá ngắn hoặc rỗng, quay lại idle không gửi API
+            return;
+        }
+        sendMessage(cleaned, true);
+    };
+
+    const {
+        state: voiceState,
+        setState: setVoiceState,
+        partialTranscript,
+        error: voiceError,
+        clearError: clearVoiceError,
+        startListening,
+        stopListening,
+        speak,
+        stopSpeaking,
+    } = useVoice({
+        onTranscriptReceived: handleTranscriptReceived,
+        locale: 'vi-VN',
+    });
+
     useEffect(() => {
         let mounted = true;
 
@@ -93,6 +118,13 @@ export default function AssistantScreen() {
         };
     }, []);
 
+    // Stop speaking (TTS) on screen unmount
+    useEffect(() => {
+        return () => {
+            stopSpeaking();
+        };
+    }, [stopSpeaking]);
+
     const appendAssistantMessage = (text: string) => {
         const aiMsg: ChatMessage = {
             id: `a${Date.now()}`,
@@ -103,9 +135,12 @@ export default function AssistantScreen() {
         setMessages((prev) => [...prev, aiMsg]);
     };
 
-    const sendMessage = async (text: string) => {
+    const sendMessage = async (text: string, fromVoice = false) => {
         const trimmed = text.trim();
         if (!trimmed || isSending) return;
+
+        // Dừng âm thanh trả lời cũ (nếu có)
+        await stopSpeaking();
 
         const userMsg: ChatMessage = {
             id: `u${Date.now()}`,
@@ -123,6 +158,9 @@ export default function AssistantScreen() {
 
         try {
             setIsSending(true);
+            if (fromVoice) {
+                setVoiceState('thinking');
+            }
             const response = await aiChatAPI.ask({
                 home_id: homeId,
                 message: trimmed,
@@ -131,11 +169,21 @@ export default function AssistantScreen() {
             });
             const citation = buildCitation(response);
             appendAssistantMessage(citation ? `${response.answer}\n\n${citation}` : response.answer);
+
+            if (fromVoice) {
+                await speak(response.answer);
+            }
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Không thể gọi trợ lý AI.';
             appendAssistantMessage(message);
+            if (fromVoice) {
+                setVoiceState('idle');
+            }
         } finally {
             setIsSending(false);
+            if (!fromVoice) {
+                setVoiceState('idle');
+            }
         }
     };
 
@@ -210,6 +258,80 @@ export default function AssistantScreen() {
                     />
                 </View>
 
+                {/* Voice Status Bar */}
+                {(voiceState !== 'idle' || voiceError) && (
+                    <View
+                        style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            paddingHorizontal: Spacing.md,
+                            paddingVertical: 10,
+                            backgroundColor: voiceError ? colors.errorLight : colors.surface,
+                            borderTopWidth: 1,
+                            borderTopColor: voiceError ? colors.error : colors.border,
+                        }}
+                    >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flex: 1 }}>
+                            {voiceError ? (
+                                <Feather name="alert-circle" size={16} color={colors.error} />
+                            ) : voiceState === 'listening' ? (
+                                <ActivityIndicator size="small" color={colors.error} />
+                            ) : voiceState === 'speaking' ? (
+                                <Feather name="volume-2" size={16} color={colors.success} />
+                            ) : (
+                                <ActivityIndicator size="small" color={colors.primary} />
+                            )}
+
+                            <Text
+                                style={[
+                                    Typography.caption,
+                                    {
+                                        color: voiceError
+                                            ? colors.error
+                                            : voiceState === 'listening'
+                                            ? colors.error
+                                            : voiceState === 'speaking'
+                                            ? colors.success
+                                            : colors.textSecondary,
+                                        flex: 1,
+                                    },
+                                ]}
+                                numberOfLines={1}
+                            >
+                                {voiceError
+                                    ? voiceError
+                                    : voiceState === 'listening'
+                                    ? `Đang nghe: "${partialTranscript || 'Đang chờ...'}"`
+                                    : voiceState === 'transcribing'
+                                    ? 'Đang xử lý giọng nói...'
+                                    : voiceState === 'thinking'
+                                    ? 'Trợ lý đang suy nghĩ...'
+                                    : 'Trợ lý đang trả lời bằng giọng nói...'}
+                            </Text>
+                        </View>
+                        <Pressable
+                            onPress={async () => {
+                                if (voiceError) {
+                                    clearVoiceError();
+                                } else if (voiceState === 'listening' || voiceState === 'transcribing') {
+                                    await stopListening();
+                                    setVoiceState('idle');
+                                } else if (voiceState === 'speaking') {
+                                    await stopSpeaking();
+                                }
+                            }}
+                            style={{
+                                padding: Spacing.xs,
+                                borderRadius: BorderRadius.sm,
+                                backgroundColor: colors.borderLight,
+                            }}
+                        >
+                            <Feather name="x" size={16} color={colors.textSecondary} />
+                        </Pressable>
+                    </View>
+                )}
+
                 <View
                     style={{
                         flexDirection: 'row',
@@ -222,22 +344,43 @@ export default function AssistantScreen() {
                     }}
                 >
                     <Pressable
+                        onPress={async () => {
+                            if (voiceState === 'listening') {
+                                await stopListening();
+                            } else if (voiceState === 'speaking') {
+                                await stopSpeaking();
+                                await startListening();
+                            } else {
+                                await startListening();
+                            }
+                        }}
+                        disabled={voiceState === 'transcribing' || voiceState === 'thinking'}
                         style={{
                             width: 40,
                             height: 40,
                             borderRadius: 20,
-                            backgroundColor: colors.surface,
+                            backgroundColor: voiceState === 'listening' ? colors.error : colors.surface,
                             alignItems: 'center',
                             justifyContent: 'center',
                             borderWidth: 1,
-                            borderColor: colors.border,
+                            borderColor: voiceState === 'listening' ? colors.error : colors.border,
+                            opacity: (voiceState === 'transcribing' || voiceState === 'thinking') ? 0.6 : 1,
                         }}
                     >
-                        <Feather name="mic" size={18} color={colors.primary} />
+                        <Feather
+                            name={voiceState === 'listening' ? "mic-off" : "mic"}
+                            size={18}
+                            color={voiceState === 'listening' ? "#FFFFFF" : colors.primary}
+                        />
                     </Pressable>
                     <TextInput
                         value={input}
-                        onChangeText={setInput}
+                        onChangeText={(t) => {
+                            setInput(t);
+                            if (voiceError) {
+                                clearVoiceError();
+                            }
+                        }}
                         placeholder="Nhập câu hỏi..."
                         placeholderTextColor={colors.textTertiary}
                         style={[

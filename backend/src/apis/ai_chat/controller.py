@@ -27,26 +27,40 @@ async def smart_home_chat(
         "timezone": body.timezone,
     })
 
-    command = ai_response.get("device_command")
-    if not command:
+    commands = ai_response.get("device_commands") or []
+    if not commands and ai_response.get("device_command"):
+        commands = [ai_response["device_command"]]
+    if not commands:
         return ai_response
 
-    executed_device = device_service.send_command(
-        db,
-        UUID(command["device_id"]),
-        user_id,
-        device_models.DeviceCommandRequest(
-            command=command["command"],
-            value=command.get("value"),
-        ),
-    )
-    result = device_service.to_response(executed_device).model_dump(mode="json")
+    command_results = []
+    for command in commands:
+        executed_device = device_service.send_command(
+            db,
+            UUID(command["device_id"]),
+            user_id,
+            device_models.DeviceCommandRequest(
+                command=command["command"],
+                value=command.get("value"),
+            ),
+        )
+        command_results.append(device_service.to_response(executed_device).model_dump(mode="json"))
+
     ai_response["command_executed"] = True
-    ai_response["command_result"] = result
-    ai_response["answer"] = (
-        f"Đã thực hiện lệnh {command['command']} cho "
-        f"{command.get('device_name') or command.get('device_slug') or 'thiết bị'}."
-    )
+    ai_response["command_result"] = command_results[0] if len(command_results) == 1 else None
+    ai_response["command_results"] = command_results
+    if len(commands) == 1:
+        command = commands[0]
+        ai_response["answer"] = (
+            f"Đã thực hiện lệnh {command['command']} cho "
+            f"{command.get('device_name') or command.get('device_slug') or 'thiết bị'}."
+        )
+    else:
+        command_names = ", ".join(
+            f"{command.get('device_name') or command.get('device_slug') or 'thiết bị'} ({command['command']})"
+            for command in commands
+        )
+        ai_response["answer"] = f"Đã thực hiện {len(commands)} lệnh: {command_names}."
     return ai_response
 
 

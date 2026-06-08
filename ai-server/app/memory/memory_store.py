@@ -11,6 +11,7 @@ class MemoryContext:
     last_intent: str | None = None
     last_device_slug: str | None = None
     last_device_name: str | None = None
+    last_devices: list[dict[str, Any]] | None = None
     last_time_range: str | None = None
     conversation_summary: str | None = None
 
@@ -40,4 +41,3 @@ class InMemoryStore:
 
 
 memory_store = InMemoryStore()
-

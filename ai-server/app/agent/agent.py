@@ -3,7 +3,7 @@ import re
 import unicodedata
 from uuid import uuid4
 
-from app.agent.command_parser import parse_device_command
+from app.agent.command_parser import DeviceCommand, parse_device_command, parse_device_commands
 from app.agent.intent_router import classify_intent
 from app.agent.response_formatter import collect_evidence, fallback_answer, max_severity
 from app.agent.tool_planner import (
@@ -98,6 +98,51 @@ def _answer_longest_activity_question(message: str, evidence: list[dict], time_r
     return f"{device_name}{room_part} hoạt động lâu nhất {range_part}, tổng khoảng {_format_duration(winner['seconds'])}."
 
 
+def _collect_command_candidates(tool_results: list[dict]) -> list[dict]:
+    candidates: list[dict] = []
+    for result in tool_results:
+        if result.get("tool_name") != "query_device_status":
+            continue
+        items = result.get("items")
+        if isinstance(items, list):
+            candidates.extend(item for item in items if isinstance(item, dict))
+    return candidates
+
+
+def _device_memory_items(memory: MemoryContext | None) -> list[dict]:
+    if memory is None or not isinstance(memory.last_devices, list):
+        return []
+    return [item for item in memory.last_devices if isinstance(item, dict)]
+
+
+def _should_expand_command_from_memory(command: DeviceCommand | None, memory: MemoryContext | None) -> bool:
+    if command is None:
+        return False
+    if command.target_all or command.room_hint or command.exclude_room_hint:
+        return False
+    memory_items = _device_memory_items(memory)
+    if len(memory_items) < 2:
+        return False
+    generic_hints = {"den", "light", "quat", "fan", "dieu hoa", "may lanh", "ac", "khoa", "cua", "lock"}
+    return command.device_hint is None or (command.device_hint in generic_hints and (command.target_count or 0) > 1)
+
+
+def _commands_from_memory(command: DeviceCommand, memory: MemoryContext | None) -> list[DeviceCommand]:
+    memory_items = _device_memory_items(memory)
+    commands: list[DeviceCommand] = []
+    for item in memory_items:
+        if command.device_type_hint and _normalize_text(item.get("device_type")) != command.device_type_hint:
+            continue
+        commands.append(
+            DeviceCommand(
+                action=command.action,
+                device_hint=item.get("device_slug") or item.get("device_name"),
+                device_type_hint=command.device_type_hint or _normalize_text(item.get("device_type")) or None,
+            )
+        )
+    return commands
+
+
 def _is_controllable(item: dict) -> bool:
     device_type = _normalize_text(item.get("device_type"))
     return device_type in {"light", "fan", "ac", "lock"}
@@ -141,6 +186,13 @@ def _state_power(item: dict) -> str:
     return ""
 
 
+def _has_specific_device_hint(command) -> bool:
+    hint = getattr(command, "device_hint", None)
+    if not hint:
+        return False
+    return hint not in {"den", "light", "quat", "fan", "dieu hoa", "may lanh", "ac", "khoa", "cua", "lock"}
+
+
 def _candidate_devices_for_command(items: list[dict], command) -> list[dict]:
     controllable = [item for item in items if _is_controllable(item)]
     expected_type = getattr(command, "device_type_hint", None)
@@ -150,6 +202,9 @@ def _candidate_devices_for_command(items: list[dict], command) -> list[dict]:
             controllable = typed
 
     action = getattr(command, "action", None)
+    if _has_specific_device_hint(command):
+        return controllable
+
     if action == "turn_off":
         powered = [item for item in controllable if _state_power(item) == "ON"]
         if powered:
@@ -160,6 +215,58 @@ def _candidate_devices_for_command(items: list[dict], command) -> list[dict]:
             controllable = powered
 
     return controllable
+
+
+def _group_devices_for_command(items: list[dict], command: DeviceCommand) -> list[dict]:
+    controllable = [item for item in items if _is_controllable(item)]
+    expected_type = command.device_type_hint
+    if expected_type:
+        controllable = [item for item in controllable if _normalize_text(item.get("device_type")) == expected_type]
+    else:
+        controllable = [item for item in controllable if _normalize_text(item.get("device_type")) in {"light", "fan", "ac"}]
+
+    if command.room_hint:
+        room_hint = _normalize_text(command.room_hint)
+        controllable = [
+            item
+            for item in controllable
+            if room_hint
+            in " ".join(
+                [
+                    _normalize_text(item.get("room_name")),
+                    _normalize_text(item.get("device_name")),
+                    _normalize_text(item.get("device_slug")),
+                ]
+            )
+        ]
+
+    if command.exclude_room_hint:
+        exclude_room_hint = _normalize_text(command.exclude_room_hint)
+        controllable = [
+            item
+            for item in controllable
+            if exclude_room_hint
+            not in " ".join(
+                [
+                    _normalize_text(item.get("room_name")),
+                    _normalize_text(item.get("device_name")),
+                    _normalize_text(item.get("device_slug")),
+                ]
+            )
+        ]
+
+    return controllable
+
+
+def _device_command_payload(item: dict, command: str) -> dict:
+    return {
+        "device_id": str(item.get("id")),
+        "device_slug": item.get("device_slug"),
+        "device_name": item.get("device_name"),
+        "device_type": item.get("device_type"),
+        "command": command,
+        "value": None,
+    }
 
 
 def _resolve_command_for_device(action: str, item: dict) -> str:
@@ -287,6 +394,44 @@ def _sanitize_decision_time_range(decision: AgentDecision, explicit_time_range: 
     return decision
 
 
+def _sanitize_decision_device_hint(decision: AgentDecision, locked_device_hint: str | None) -> AgentDecision:
+    call = decision.tool_call
+    if locked_device_hint is None or call is None or call.device_hint == locked_device_hint:
+        return decision
+    return AgentDecision(
+        action=decision.action,
+        intent=decision.intent,
+        tool_call=PlannedToolCall(
+            name=call.name,
+            time_range=call.time_range,
+            device_hint=locked_device_hint,
+            query=locked_device_hint,
+            domains=call.domains,
+        ),
+        answer=decision.answer,
+        source=decision.source,
+    )
+
+
+def _clear_decision_device_hint(decision: AgentDecision) -> AgentDecision:
+    call = decision.tool_call
+    if call is None or (call.device_hint is None and call.query is None):
+        return decision
+    return AgentDecision(
+        action=decision.action,
+        intent=decision.intent,
+        tool_call=PlannedToolCall(
+            name=call.name,
+            time_range=call.time_range,
+            device_hint=None,
+            query=None,
+            domains=call.domains,
+        ),
+        answer=decision.answer,
+        source=decision.source,
+    )
+
+
 def _should_stop_after_tool(intent: str, tool_name: str, result: dict, used_tool_calls: list[dict]) -> bool:
     result_count = int(result.get("result_count") or 0)
     used_tools = {call.get("name") for call in used_tool_calls}
@@ -326,6 +471,7 @@ class SmartHomeAgent:
         intent = intent_result.intent
         device_hint = intent_result.device_hint
         time_range = intent_result.time_range
+        parsed_commands_for_intent = parse_device_commands(request.message)
         if intent == "FOLLOW_UP" and memory:
             intent = memory.last_intent or "DEVICE_HISTORY"
             device_hint = device_hint or memory.last_device_slug or memory.last_device_name
@@ -338,10 +484,27 @@ class SmartHomeAgent:
                 memory.last_time_range,
             )
 
-        parsed_command_for_intent = parse_device_command(request.message)
+        locked_command_device_hint = None
+        parsed_command_for_intent = parsed_commands_for_intent[0] if parsed_commands_for_intent else None
+        expand_command_from_memory = _should_expand_command_from_memory(parsed_command_for_intent, memory)
+        force_all_device_status = (
+            len(parsed_commands_for_intent) > 1
+            or expand_command_from_memory
+            or any(command.target_all or command.exclude_room_hint for command in parsed_commands_for_intent)
+        )
         if parsed_command_for_intent:
             intent = "DEVICE_COMMAND"
-            device_hint = parsed_command_for_intent.device_hint or device_hint
+            if force_all_device_status:
+                device_hint = None
+            else:
+                device_hint = (
+                    parsed_command_for_intent.device_hint
+                    or device_hint
+                    or (memory.last_device_slug if memory else None)
+                    or (memory.last_device_name if memory else None)
+                )
+                if parsed_command_for_intent.device_hint is None and device_hint:
+                    locked_command_device_hint = device_hint
             time_range = None
 
         memory_context = memory.to_dict() if memory else None
@@ -352,6 +515,8 @@ class SmartHomeAgent:
             memory_context=memory_context,
             device_hint=device_hint,
             time_range=time_range,
+            locked_device_hint=locked_command_device_hint,
+            force_all_device_status=force_all_device_status,
         )
 
         logger.info(
@@ -381,11 +546,12 @@ class SmartHomeAgent:
             return self._handle_device_command(
                 request=request,
                 request_id=request_id,
-                evidence=evidence,
+                evidence=_collect_command_candidates(tool_results) or evidence,
                 used_tools=used_tools,
                 severity=severity,
                 device_hint=device_hint,
                 time_range=time_range,
+                memory=memory,
             )
 
         deterministic_answer = _answer_longest_activity_question(request.message, evidence, time_range) if intent == "DEVICE_HISTORY" else None
@@ -437,6 +603,7 @@ class SmartHomeAgent:
             memory_updated=updated,
             severity=severity,
             device_command=device_command,
+            device_commands=[],
         )
 
     def _run_agent_loop(
@@ -448,6 +615,8 @@ class SmartHomeAgent:
         memory_context: dict | None,
         device_hint: str | None,
         time_range: str | None,
+        locked_device_hint: str | None = None,
+        force_all_device_status: bool = False,
     ) -> tuple[list[dict], str, str | None, str, str | None, str | None]:
         tool_results: list[dict] = []
         used_tool_calls: list[dict] = []
@@ -468,6 +637,9 @@ class SmartHomeAgent:
                 )
                 if decision is not None:
                     decision = _sanitize_decision_time_range(decision, time_range)
+                    decision = _sanitize_decision_device_hint(decision, locked_device_hint)
+                    if force_all_device_status and decision.intent == "DEVICE_COMMAND":
+                        decision = _clear_decision_device_hint(decision)
                 if decision is not None and not _decision_matches_rule_intent(decision, rule_intent):
                     feedback = _rejection_feedback(decision, rule_intent)
                     logger.info(
@@ -490,6 +662,9 @@ class SmartHomeAgent:
                     )
                     if decision is not None:
                         decision = _sanitize_decision_time_range(decision, time_range)
+                        decision = _sanitize_decision_device_hint(decision, locked_device_hint)
+                        if force_all_device_status and decision.intent == "DEVICE_COMMAND":
+                            decision = _clear_decision_device_hint(decision)
                     if decision is not None and not _decision_matches_rule_intent(decision, rule_intent):
                         logger.info(
                             "agent.step_rejected_after_feedback request_id=%s step=%s rule_intent=%s llm_intent=%s action=%s tool=%s",
@@ -558,6 +733,9 @@ class SmartHomeAgent:
                     )
                     if decision is not None:
                         decision = _sanitize_decision_time_range(decision, time_range)
+                        decision = _sanitize_decision_device_hint(decision, locked_device_hint)
+                        if force_all_device_status and decision.intent == "DEVICE_COMMAND":
+                            decision = _clear_decision_device_hint(decision)
                     if (
                         decision is None
                         or not _decision_matches_rule_intent(decision, rule_intent)
@@ -587,7 +765,7 @@ class SmartHomeAgent:
                         },
                     }
                 )
-                device_hint = call.device_hint or device_hint
+                device_hint = locked_device_hint or call.device_hint or device_hint
                 time_range = call.time_range or time_range
                 result = self._execute_planned_tool(
                     db,
@@ -712,32 +890,77 @@ class SmartHomeAgent:
         severity: str,
         device_hint: str | None,
         time_range: str | None,
+        memory: MemoryContext | None = None,
     ) -> ChatResponse:
-        parsed_command = parse_device_command(request.message)
-        controllable = _candidate_devices_for_command(evidence, parsed_command)
-        ranked = sorted(
-            controllable,
-            key=lambda item: _score_device(item, parsed_command.device_hint if parsed_command else device_hint),
-            reverse=True,
-        )
-        best = ranked[0] if ranked and _score_device(ranked[0], parsed_command.device_hint if parsed_command else device_hint) > 0 else None
-        if parsed_command and best:
+        parsed_commands = parse_device_commands(request.message)
+        if len(parsed_commands) == 1 and _should_expand_command_from_memory(parsed_commands[0], memory):
+            memory_commands = _commands_from_memory(parsed_commands[0], memory)
+            if memory_commands:
+                parsed_commands = memory_commands
+        resolved_commands: list[tuple[DeviceCommand, dict, dict]] = []
+        used_device_ids: set[str] = set()
+        unresolved_count = 0
+        for parsed_command in parsed_commands:
+            if parsed_command.target_all:
+                group_devices = [
+                    item
+                    for item in _group_devices_for_command(evidence, parsed_command)
+                    if str(item.get("id")) not in used_device_ids
+                ]
+                if not group_devices:
+                    unresolved_count += 1
+                    continue
+                for best in group_devices:
+                    used_device_ids.add(str(best.get("id")))
+                    command = _resolve_command_for_device(parsed_command.action, best)
+                    resolved_commands.append((parsed_command, best, _device_command_payload(best, command)))
+                continue
+
+            resolved_device_hint = parsed_command.device_hint or device_hint
+            controllable = _candidate_devices_for_command(evidence, parsed_command)
+            ranked = sorted(
+                controllable,
+                key=lambda item: _score_device(item, resolved_device_hint),
+                reverse=True,
+            )
+            best = next(
+                (
+                    item
+                    for item in ranked
+                    if str(item.get("id")) not in used_device_ids
+                    and _score_device(item, resolved_device_hint) > 0
+                ),
+                None,
+            )
+            if best is None:
+                unresolved_count += 1
+                continue
+            used_device_ids.add(str(best.get("id")))
             command = _resolve_command_for_device(parsed_command.action, best)
-            device_command = {
-                "device_id": str(best.get("id")),
-                "device_slug": best.get("device_slug"),
-                "device_name": best.get("device_name"),
-                "device_type": best.get("device_type"),
-                "command": command,
-                "value": None,
-            }
-            answer = f"Đã xác định thiết bị {best.get('device_name') or best.get('device_slug')} để thực hiện lệnh {command}."
-            updated = self._update_memory(request, "DEVICE_COMMAND", evidence, best.get("device_slug") or device_hint, time_range)
+            resolved_commands.append((parsed_command, best, _device_command_payload(best, command)))
+
+        if parsed_commands and unresolved_count == 0 and resolved_commands:
+            device_commands = [item[2] for item in resolved_commands]
+            device_command = device_commands[0] if len(device_commands) == 1 else None
+            if len(device_commands) == 1:
+                answer = (
+                    f"Đã xác định thiết bị {device_commands[0].get('device_name') or device_commands[0].get('device_slug')} "
+                    f"để thực hiện lệnh {device_commands[0]['command']}."
+                )
+            else:
+                names = ", ".join(
+                    f"{command.get('device_name') or command.get('device_slug')} ({command['command']})"
+                    for command in device_commands
+                )
+                answer = f"Đã xác định {len(device_commands)} lệnh thiết bị: {names}."
+            resolved_devices = [item[1] for item in resolved_commands]
+            last_best = resolved_devices[-1]
+            updated = self._update_memory(request, "DEVICE_COMMAND", resolved_devices, last_best.get("device_slug") or device_hint, time_range)
             logger.info(
-                "chat.device_command request_id=%s device_id=%s command=%s",
+                "chat.device_command request_id=%s command_count=%s device_ids=%s",
                 request_id,
-                device_command["device_id"],
-                command,
+                len(device_commands),
+                ",".join(command["device_id"] for command in device_commands),
             )
             return ChatResponse(
                 answer=answer,
@@ -748,19 +971,20 @@ class SmartHomeAgent:
                 memory_updated=updated,
                 severity=severity,
                 device_command=device_command,
-            )
+                device_commands=device_commands,
+        )
 
         answer = "Mình chưa xác định được đúng thiết bị để thực hiện lệnh này."
-        updated = self._update_memory(request, "DEVICE_COMMAND", evidence, device_hint, time_range)
         return ChatResponse(
             answer=answer,
             intent="DEVICE_COMMAND",
             used_tools=used_tools,
             evidence=evidence,
             suggested_actions=[],
-            memory_updated=updated,
+            memory_updated=False,
             severity="none",
             device_command=None,
+            device_commands=[],
         )
 
     def _update_memory(
@@ -772,6 +996,16 @@ class SmartHomeAgent:
         time_range: str | None,
     ) -> bool:
         device_item = next((item for item in evidence if item.get("device_slug") or item.get("device_name")), None)
+        device_items = [
+            {
+                "device_slug": item.get("device_slug"),
+                "device_name": item.get("device_name"),
+                "device_type": item.get("device_type"),
+                "room_name": item.get("room_name"),
+            }
+            for item in evidence
+            if item.get("device_slug") or item.get("device_name")
+        ]
         context = MemoryContext(
             session_id=request.session_id,
             user_id=request.user_id,
@@ -779,6 +1013,7 @@ class SmartHomeAgent:
             last_intent=intent,
             last_device_slug=(device_item or {}).get("device_slug") or device_hint,
             last_device_name=(device_item or {}).get("device_name") or device_hint,
+            last_devices=device_items or None,
             last_time_range=time_range,
             conversation_summary=f"Người dùng vừa hỏi intent {intent}.",
         )

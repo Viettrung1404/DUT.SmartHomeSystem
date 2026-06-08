@@ -24,3 +24,4 @@ class ChatResponse(BaseModel):
     memory_updated: bool = False
     severity: str = "none"
     device_command: dict[str, Any] | None = None
+    device_commands: list[dict[str, Any]] = []
