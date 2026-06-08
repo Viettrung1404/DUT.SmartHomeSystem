@@ -31,6 +31,13 @@ function getDeviceIcon(type: string): keyof typeof Feather.glyphMap {
 }
 
 function mapMetadataToDeviceFields(metadata: Record<string, any> | undefined): Partial<DeviceCardModel> {
+    const angle =
+        typeof metadata?.angle === 'number'
+            ? metadata.angle
+            : typeof metadata?.angle === 'string'
+                ? Number(metadata.angle)
+                : undefined;
+
     return {
         brightness: typeof metadata?.brightness === 'number' ? metadata.brightness : undefined,
         temperature: typeof metadata?.temperature === 'number' ? metadata.temperature : undefined,
@@ -45,6 +52,7 @@ function mapMetadataToDeviceFields(metadata: Record<string, any> | undefined): P
             typeof metadata?.gas_detected === 'boolean' ? metadata.gas_detected : undefined,
         rainDetected:
             typeof metadata?.rain_detected === 'boolean' ? metadata.rain_detected : undefined,
+        rainAngle: Number.isFinite(angle) ? angle : undefined,
         distanceLight:
             typeof metadata?.distance_light === 'string' ? metadata.distance_light : undefined,
         buzzer: typeof metadata?.buzzer === 'string' ? metadata.buzzer : undefined,
@@ -185,7 +193,7 @@ export default function RoomDetailScreen() {
                 <Card style={{ flex: 1, paddingVertical: Spacing.sm }}>
                     <View style={{ alignItems: 'center' }}>
                         <Text style={[Typography.number, { color: colors.success }]}>{onlineCount}</Text>
-                        <Text style={[Typography.caption, { color: colors.textSecondary }]}>Online</Text>
+                        <Text style={[Typography.caption, { color: colors.textSecondary }]}>Trực tuyến</Text>
                     </View>
                 </Card>
             </View>

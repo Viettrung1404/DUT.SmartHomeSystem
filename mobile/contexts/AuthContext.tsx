@@ -3,12 +3,13 @@
  * Wraps the API service for login/register/logout.
  */
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import {
     authAPI,
     setTokens,
     clearTokens,
     getAccessToken,
+    getRefreshToken,
     hydrateTokensFromStorage,
     UserResponse,
     LoginResponse,
@@ -18,27 +19,30 @@ interface AuthState {
     user: UserResponse | null;
     isAuthenticated: boolean;
     isLoading: boolean;
+    isLoggingOut: boolean;
 }
 
 interface AuthContextType extends AuthState {
     login: (email: string, password: string) => Promise<void>;
     register: (email: string, fullName: string, password: string) => Promise<void>;
-    logout: () => void;
+    logout: () => Promise<void>;
     refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+    const logoutInFlightRef = useRef(false);
     const [state, setState] = useState<AuthState>({
         user: null,
         isAuthenticated: false,
         isLoading: true,
+        isLoggingOut: false,
     });
 
     // Restore tokens first so web refresh keeps the login session.
     useEffect(() => {
-        bootstrapAuth();
+        void bootstrapAuth();
     }, []);
 
     async function bootstrapAuth() {
@@ -47,17 +51,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     async function loadUser() {
+        if (logoutInFlightRef.current) {
+            return;
+        }
+
         if (!getAccessToken()) {
-            setState({ user: null, isAuthenticated: false, isLoading: false });
+            setState((current) => ({ ...current, user: null, isAuthenticated: false, isLoading: false }));
             return;
         }
 
         try {
             const user = await authAPI.me();
-            setState({ user, isAuthenticated: true, isLoading: false });
+            if (logoutInFlightRef.current) {
+                return;
+            }
+            setState((current) => ({ ...current, user, isAuthenticated: true, isLoading: false }));
         } catch {
             clearTokens();
-            setState({ user: null, isAuthenticated: false, isLoading: false });
+            if (logoutInFlightRef.current) {
+                return;
+            }
+            setState((current) => ({ ...current, user: null, isAuthenticated: false, isLoading: false }));
         }
     }
 
@@ -65,7 +79,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const tokenData: LoginResponse = await authAPI.login(email, password);
         setTokens(tokenData.access_token, tokenData.refresh_token);
         const user = await authAPI.me();
-        setState({ user, isAuthenticated: true, isLoading: false });
+        logoutInFlightRef.current = false;
+        setState((current) => ({ ...current, user, isAuthenticated: true, isLoading: false }));
     }
 
     async function register(email: string, fullName: string, password: string) {
@@ -74,12 +89,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await login(email, password);
     }
 
-    function logout() {
+    async function logout() {
+        if (logoutInFlightRef.current) {
+            return;
+        }
+
+        logoutInFlightRef.current = true;
+        const accessToken = getAccessToken();
+        const refreshToken = getRefreshToken();
         clearTokens();
-        setState({ user: null, isAuthenticated: false, isLoading: false });
+        setState({
+            user: null,
+            isAuthenticated: false,
+            isLoading: false,
+            isLoggingOut: true,
+        });
+
+        try {
+            if (accessToken) {
+                await authAPI.logout(accessToken, refreshToken);
+            }
+        } catch (error) {
+            console.warn('Logout request failed, clearing local session anyway:', error);
+        } finally {
+            logoutInFlightRef.current = false;
+            setState((current) => ({ ...current, isLoggingOut: false }));
+        }
     }
 
     async function refreshUser() {
+        if (logoutInFlightRef.current) {
+            return;
+        }
         await loadUser();
     }
 

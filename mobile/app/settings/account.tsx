@@ -1,11 +1,13 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, ActivityIndicator, ScrollView, Alert, Platform } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
 import { Typography } from '@/constants/typography';
 import { Spacing } from '@/constants/theme';
 import { homesAPI } from '@/services/api';
@@ -17,7 +19,7 @@ interface AccountStats {
 
 export default function SettingsAccountScreen() {
     const { colors } = useTheme();
-    const { user, refreshUser } = useAuth();
+    const { user, refreshUser, logout, isLoggingOut } = useAuth();
     const [stats, setStats] = useState<AccountStats>({ homeCount: 0, activeDevices: 0 });
     const [loading, setLoading] = useState(true);
 
@@ -55,6 +57,27 @@ export default function SettingsAccountScreen() {
         }, [refreshUser]),
     );
 
+    const confirmLogout = () => {
+        if (Platform.OS === 'web') {
+            const confirmed = globalThis.confirm?.('Bạn có muốn kết thúc phiên đăng nhập hiện tại không?');
+            if (confirmed) {
+                void logout();
+            }
+            return;
+        }
+
+        Alert.alert('Đăng xuất', 'Bạn có muốn kết thúc phiên đăng nhập hiện tại không?', [
+            { text: 'Hủy', style: 'cancel' },
+            {
+                text: 'Đăng xuất',
+                style: 'destructive',
+                onPress: async () => {
+                    await logout();
+                },
+            },
+        ]);
+    };
+
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
             <Header title="Tài khoản" showBack />
@@ -68,11 +91,15 @@ export default function SettingsAccountScreen() {
                         <Text style={[Typography.h2, { color: colors.text, marginBottom: Spacing.sm }]}>
                             {user?.full_name ?? 'Chưa có thông tin'}
                         </Text>
-                        <Text style={[Typography.body, { color: colors.textSecondary }]}>{user?.email ?? 'Không có email'}</Text>
+                        <Text style={[Typography.body, { color: colors.textSecondary }]}>
+                            {user?.email ?? 'Không có email'}
+                        </Text>
                     </Card>
 
                     <Card>
-                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.sm }]}>Thông tin tài khoản</Text>
+                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.sm }]}>
+                            Thông tin tài khoản
+                        </Text>
                         <View style={{ gap: Spacing.sm }}>
                             <View>
                                 <Text style={[Typography.captionMedium, { color: colors.textTertiary }]}>User ID</Text>
@@ -87,6 +114,22 @@ export default function SettingsAccountScreen() {
                                 <Text style={[Typography.bodyMedium, { color: colors.text }]}>{stats.activeDevices}</Text>
                             </View>
                         </View>
+                    </Card>
+
+                    <Card>
+                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.xs }]}>
+                            Phiên đăng nhập
+                        </Text>
+                        <Text style={[Typography.body, { color: colors.textSecondary, marginBottom: Spacing.md }]}>
+                            Đăng xuất sẽ xóa token trên máy và gọi backend thu hồi refresh token của phiên hiện tại.
+                        </Text>
+                        <Button
+                            title="Đăng xuất khỏi thiết bị này"
+                            variant="danger"
+                            size="lg"
+                            loading={isLoggingOut}
+                            onPress={confirmLogout}
+                        />
                     </Card>
                 </ScrollView>
             )}
