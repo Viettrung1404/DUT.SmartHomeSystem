@@ -8,14 +8,37 @@ services:
       - "8000:8000"
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/smarthome
+      - AI_SERVER_URL=http://ai-server:8100
+      - AI_SERVER_API_KEY=${AI_SERVER_API_KEY:-change_me}
       - FACE_GALLERY_DIR=/app/data/face_gallery
       - FACE_LAST_IMAGE_PATH=/app/data/face_last.jpg
     depends_on:
       - db
+      - ai-server
     volumes:
       - ./backend/src:/app/src
       - ./backend/data:/app/data
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - app-network
+
+  # AI assistant service
+  ai-server:
+    build:
+      context: .
+      dockerfile: ai-server/Dockerfile
+    ports:
+      - "8100:8100"
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://postgres:postgres@db:5432/smarthome
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:3b}
+      - AI_SERVER_API_KEY=${AI_SERVER_API_KEY:-change_me}
+      - MEMORY_BACKEND=memory
+      - REQUEST_TIMEOUT_SECONDS=60
+      - MAX_TOOL_ROWS=50
+    depends_on:
+      - db
     networks:
       - app-network
 
@@ -33,45 +56,45 @@ services:
     networks:
       - app-network
 
-  # Grafana for data visualization
-  grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_INSTALL_PLUGINS=grafana-piechart-panel
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning
-    depends_on:
-      - db
-    networks:
-      - app-network
+#  # Grafana for data visualization
+#  grafana:
+#    image: grafana/grafana:latest
+#    container_name: grafana
+#    ports:
+#      - "3000:3000"
+#    environment:
+#      - GF_SECURITY_ADMIN_PASSWORD=admin
+#      - GF_SECURITY_ADMIN_USER=admin
+#      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+#    volumes:
+#      - grafana_data:/var/lib/grafana
+#      - ./grafana/provisioning:/etc/grafana/provisioning
+#    depends_on:
+#      - db
+#    networks:
+#      - app-network
 
-  # Mobile Expo dev server
-  mobile:
-    build: 
-      context: .
-      dockerfile: Dockerfile.mobile
-    ports:
-      - "8081:8081"    # Expo dev server
-      - "19000:19000"  # Expo DevTools
-      - "19001:19001"  # Expo iOS port
-      - "19002:19002"  # Expo Android port
-    volumes:
-      - ./mobile:/app
-      - /app/node_modules
-    environment:
-      - EXPO_DEVTOOLS_LISTEN_ADDRESS=0.0.0.0
-      - REACT_NATIVE_PACKAGER_HOSTNAME=localhost
-      - EXPO_PUBLIC_API_URL=${EXPO_PUBLIC_API_URL:-http://localhost:8000}
-    stdin_open: true
-    tty: true
-    networks:
-      - app-network
+#  # Mobile Expo dev server
+#  mobile:
+#    build: 
+#      context: .
+#      dockerfile: Dockerfile.mobile
+#    ports:
+#      - "8081:8081"    # Expo dev server
+#      - "19000:19000"  # Expo DevTools
+#      - "19001:19001"  # Expo iOS port
+#      - "19002:19002"  # Expo Android port
+#    volumes:
+#      - ./mobile:/app
+#      - /app/node_modules
+#    environment:
+#      - EXPO_DEVTOOLS_LISTEN_ADDRESS=0.0.0.0
+#      - REACT_NATIVE_PACKAGER_HOSTNAME=localhost
+#      - EXPO_PUBLIC_API_URL=${EXPO_PUBLIC_API_URL:-http://localhost:8000}
+#    stdin_open: true
+#    tty: true
+#    networks:
+#      - app-network
 
 volumes:
   postgres_data:

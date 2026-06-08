@@ -39,6 +39,10 @@ WS_PING_INTERVAL = int(os.getenv("WS_PING_INTERVAL", 30))
 BACKEND_HOST = os.getenv("BACKEND_HOST", "0.0.0.0")
 BACKEND_PORT = int(os.getenv("BACKEND_PORT", "8000"))
 
+# AI Server
+AI_SERVER_URL = os.getenv("AI_SERVER_URL", "http://localhost:8100")
+AI_SERVER_API_KEY = os.getenv("AI_SERVER_API_KEY", "change_me")
+
 # Email / password reset
 SMTP_HOST = os.getenv("SMTP_HOST") or os.getenv("SMTP_SERVER")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))

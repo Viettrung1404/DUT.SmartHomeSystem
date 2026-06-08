@@ -21,7 +21,7 @@ import re
 import sys
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -118,6 +118,31 @@ def parse_row(raw: list[str], tz: ZoneInfo) -> RowEvent | None:
     return RowEvent(timestamp=ts, sensor=sensor, state=state, label=label)
 
 
+def compute_timestamp_shift(input_path: Path, tz: ZoneInfo, limit: int, recent_days: int) -> timedelta:
+    if recent_days <= 0:
+        return timedelta(0)
+
+    max_ts: datetime | None = None
+    parsed = 0
+    with input_path.open("r", encoding="utf-8", newline="") as f:
+        reader = csv.reader(f)
+        for raw in reader:
+            if limit and parsed >= limit:
+                break
+            evt = parse_row(raw, tz)
+            parsed += 1
+            if evt is None:
+                continue
+            if max_ts is None or evt.timestamp > max_ts:
+                max_ts = evt.timestamp
+
+    if max_ts is None:
+        return timedelta(0)
+
+    target_max = datetime.now(tz) - timedelta(days=1)
+    return target_max - max_ts
+
+
 def map_event_type(state: str) -> EventType:
     if state in {"ON", "OPEN", "PRESENT"}:
         return EventType.DEVICE_ON
@@ -172,8 +197,12 @@ def ensure_home_users(session: Session, home_name: str, user_emails: list[str], 
     return home_obj, users
 
 
-def ensure_device(session: Session, home_id, sensor_name: str) -> str:
-    device_id = slugify_sensor(sensor_name)
+def ensure_device(session: Session, home_id, sensor_name: str, device_cache: dict[str, uuid.UUID]) -> uuid.UUID:
+    cached_id = device_cache.get(sensor_name)
+    if cached_id is not None:
+        return cached_id
+
+    device_slug = slugify_sensor(sensor_name)
 
     room_name = infer_room_name(sensor_name)
     room = session.execute(
@@ -189,10 +218,15 @@ def ensure_device(session: Session, home_id, sensor_name: str) -> str:
         session.flush()
         room_id = room_obj.id
 
-    existing = session.get(Device, device_id)
+    existing = session.execute(
+        text("SELECT id FROM devices WHERE slug = :slug LIMIT 1"),
+        {"slug": device_slug},
+    ).fetchone()
     if not existing:
+        device_id = uuid.uuid4()
         dev = Device(
             id=device_id,
+            slug=device_slug,
             name=sensor_name,
             type=infer_device_type(sensor_name),
             mqtt_topic=f"casas/{device_id}",
@@ -206,7 +240,11 @@ def ensure_device(session: Session, home_id, sensor_name: str) -> str:
         session.add(state)
         session.flush()
 
-    return device_id
+        device_cache[sensor_name] = device_id
+        return device_id
+
+    device_cache[sensor_name] = existing.id
+    return existing.id
 
 
 def reset_home_data(session: Session, home_id):
@@ -241,9 +279,30 @@ def pick_user_for_event(users: list[User], evt: RowEvent) -> User:
     return users[idx]
 
 
-def run_etl(input_path: Path, home_name: str, user_emails: list[str], tz_name: str, limit: int, do_reset: bool):
+def parse_trigger_source(value: str) -> TriggerSource:
+    normalized = value.strip().upper()
+    try:
+        return TriggerSource(normalized)
+    except ValueError:
+        raise ValueError(
+            f"Invalid trigger source '{value}'. Use one of: "
+            + ", ".join(item.value for item in TriggerSource)
+        )
+
+
+def run_etl(
+    input_path: Path,
+    home_name: str,
+    user_emails: list[str],
+    tz_name: str,
+    limit: int,
+    do_reset: bool,
+    trigger_source: TriggerSource,
+    recent_days: int,
+):
     tz = ZoneInfo(tz_name)
     engine = create_engine(DB_URL, echo=False)
+    timestamp_shift = compute_timestamp_shift(input_path, tz, limit, recent_days)
 
     parsed = 0
     skipped = 0
@@ -258,7 +317,8 @@ def run_etl(input_path: Path, home_name: str, user_emails: list[str], tz_name: s
                 print(f"Reset existing logs/patterns for home {home.id} ...")
                 reset_home_data(session, home.id)
 
-            pending_on: dict[str, ActivityLog] = {}
+            pending_on: dict[uuid.UUID, ActivityLog] = {}
+            device_cache: dict[str, uuid.UUID] = {}
 
             with input_path.open("r", encoding="utf-8", newline="") as f:
                 reader = csv.reader(f)
@@ -271,10 +331,18 @@ def run_etl(input_path: Path, home_name: str, user_emails: list[str], tz_name: s
                     if evt is None:
                         skipped += 1
                         continue
+                    original_timestamp = evt.timestamp
+                    if timestamp_shift:
+                        evt = RowEvent(
+                            timestamp=evt.timestamp + timestamp_shift,
+                            sensor=evt.sensor,
+                            state=evt.state,
+                            label=evt.label,
+                        )
 
                     user = pick_user_for_event(users, evt)
 
-                    device_id = ensure_device(session, home.id, evt.sensor)
+                    device_id = ensure_device(session, home.id, evt.sensor, device_cache)
                     evt_type = map_event_type(evt.state)
 
                     if evt_type == EventType.DEVICE_ON:
@@ -292,7 +360,7 @@ def run_etl(input_path: Path, home_name: str, user_emails: list[str], tz_name: s
                             session_end=None,
                             duration_seconds=None,
                             event_type=EventType.DEVICE_ON,
-                            trigger_source=TriggerSource.SENSOR,
+                            trigger_source=trigger_source,
                             device_id=device_id,
                             user_id=user.id,
                             home_id=home.id,
@@ -302,6 +370,7 @@ def run_etl(input_path: Path, home_name: str, user_emails: list[str], tz_name: s
                                 "sensor": evt.sensor,
                                 "sensor_state": evt.state,
                                 "activity_label": evt.label,
+                                "original_timestamp": original_timestamp.isoformat(),
                             },
                         )
                         session.add(on_log)
@@ -314,7 +383,7 @@ def run_etl(input_path: Path, home_name: str, user_emails: list[str], tz_name: s
                             session_end=None,
                             duration_seconds=0,
                             event_type=EventType.DEVICE_OFF,
-                            trigger_source=TriggerSource.SENSOR,
+                            trigger_source=trigger_source,
                             device_id=device_id,
                             user_id=user.id,
                             home_id=home.id,
@@ -324,6 +393,7 @@ def run_etl(input_path: Path, home_name: str, user_emails: list[str], tz_name: s
                                 "sensor": evt.sensor,
                                 "sensor_state": evt.state,
                                 "activity_label": evt.label,
+                                "original_timestamp": original_timestamp.isoformat(),
                             },
                         )
                         session.add(off_log)
@@ -356,6 +426,9 @@ def run_etl(input_path: Path, home_name: str, user_emails: list[str], tz_name: s
     print(f"ON/OFF matched    : {matched_pairs}")
     print(f"FORGOT_OFF inferred: {inferred_forgot}")
     print("Users mapped      :", ", ".join(user_emails))
+    print("Trigger source    :", trigger_source.value)
+    if timestamp_shift:
+        print("Timestamp shift   :", timestamp_shift)
 
 
 def main():
@@ -379,6 +452,17 @@ def main():
     parser.add_argument("--timezone", default=DEFAULT_TZ)
     parser.add_argument("--limit", type=int, default=0, help="Max rows to import (0 = all)")
     parser.add_argument("--reset-home-data", action="store_true", help="Delete prior logs/patterns for this home")
+    parser.add_argument(
+        "--trigger-source",
+        default=TriggerSource.PHYSICAL_ATTRIBUTED.value,
+        help="Trigger source stored in activity_logs. Default is PHYSICAL_ATTRIBUTED so analytics can learn habits.",
+    )
+    parser.add_argument(
+        "--shift-to-recent-days",
+        type=int,
+        default=0,
+        help="Shift dataset timestamps so the latest imported event is near today. Keeps original timestamp in metadata.",
+    )
 
     args = parser.parse_args()
     input_path = Path(args.input)
@@ -399,6 +483,8 @@ def main():
         tz_name=args.timezone,
         limit=args.limit,
         do_reset=args.reset_home_data,
+        trigger_source=parse_trigger_source(args.trigger_source),
+        recent_days=args.shift_to_recent_days,
     )
 
 
