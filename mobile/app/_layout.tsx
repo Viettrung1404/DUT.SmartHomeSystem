@@ -1,11 +1,31 @@
-import React from 'react';
-import { Stack } from 'expo-router';
+import React, { useEffect } from 'react';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
-import { AuthProvider } from '@/contexts/AuthContext';
+import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 
 function InnerLayout() {
   const { isDark, colors } = useTheme();
+  const { isAuthenticated, isLoading } = useAuth();
+  const router = useRouter();
+  const segments = useSegments();
+
+  useEffect(() => {
+    if (isLoading) {
+      return;
+    }
+
+    const inAuthGroup = segments[0] === 'auth';
+
+    if (!isAuthenticated && !inAuthGroup) {
+      router.replace('/auth/login');
+      return;
+    }
+
+    if (isAuthenticated && inAuthGroup) {
+      router.replace('/(tabs)');
+    }
+  }, [isAuthenticated, isLoading, router, segments]);
 
   return (
     <>
@@ -43,7 +63,23 @@ function InnerLayout() {
           options={{ animation: 'slide_from_right' }}
         />
         <Stack.Screen
-          name="settings"
+          name="settings/index"
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="settings/home"
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="settings/account"
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="settings/connectivity"
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="settings/about"
           options={{ animation: 'slide_from_right' }}
         />
       </Stack>

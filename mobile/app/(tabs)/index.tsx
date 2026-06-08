@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView, FlatList, Pressable, ActivityIndicator, useWindowDimensions } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Card } from '@/components/ui/Card';
@@ -11,6 +11,7 @@ import { Typography } from '@/constants/typography';
 import { Feather } from '@expo/vector-icons';
 import { homesAPI, roomsAPI, suggestionsAPI, devicesAPI, DeviceResponse } from '@/services/api';
 import { useWebSocket } from '@/hooks/use-websocket';
+import { resolveRoomIcon } from '@/utils/roomIcons';
 import {
   QUICK_ACTIONS,
   QuickActionId,
@@ -37,29 +38,6 @@ interface DashboardRoom {
   icon: string;
   activeDevices: number;
   deviceCount: number;
-}
-
-const ROOM_ICON_RULES: Array<{ match: RegExp; icon: keyof typeof Feather.glyphMap }> = [
-  { match: /khach|living/, icon: 'tv' },
-  { match: /ngu|bed/, icon: 'moon' },
-  { match: /bep|kitchen/, icon: 'coffee' },
-  { match: /tam|bath/, icon: 'droplet' },
-  { match: /ban cong|balcony/, icon: 'sun' },
-  { match: /gara|garage/, icon: 'truck' },
-  { match: /lam viec|office/, icon: 'briefcase' },
-  { match: /tre|kids|child/, icon: 'smile' },
-  { match: /kho|storage/, icon: 'archive' },
-];
-
-function normalizeRoomName(name: string) {
-  return name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-}
-
-function resolveRoomIcon(name: string, icon?: string | null) {
-  if (icon) return icon;
-  const normalized = normalizeRoomName(name);
-  const rule = ROOM_ICON_RULES.find((item) => item.match.test(normalized));
-  return rule?.icon ?? 'home';
 }
 
 export default function DashboardScreen() {
@@ -97,11 +75,7 @@ export default function DashboardScreen() {
     return Math.min(maxCardWidth, Math.floor((available - gap * (columns - 1)) / columns));
   })();
 
-  useEffect(() => {
-    loadDashboard();
-  }, []);
-
-  const loadDashboard = async () => {
+  const loadDashboard = useCallback(async () => {
     try {
       setLoading(true);
       const homes = await homesAPI.list();
@@ -158,7 +132,13 @@ export default function DashboardScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadDashboard();
+    }, [loadDashboard]),
+  );
 
   const handleInsightAction = async (id: string, accepted: boolean) => {
     const suggestionId = Number(id);
@@ -446,7 +426,9 @@ export default function DashboardScreen() {
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {rooms.map((room) => {
-              const iconName = (room.icon || 'home') as keyof typeof Feather.glyphMap;
+              const iconName = room.icon && room.icon in Feather.glyphMap
+                ? (room.icon as keyof typeof Feather.glyphMap)
+                : 'home';
               return (
                 <Pressable
                   key={room.id}

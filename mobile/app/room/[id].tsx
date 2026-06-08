@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, FlatList, ActivityIndicator } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Header } from '@/components/ui/Header';
@@ -16,7 +16,9 @@ function getDeviceIcon(type: string): keyof typeof Feather.glyphMap {
     const iconMap: Record<string, keyof typeof Feather.glyphMap> = {
         light: 'sun',
         fan: 'wind',
-        door: 'door-open',
+        door: 'unlock',
+        lock: 'lock',
+        curtain: 'columns',
         buzzer: 'bell',
         distance_light: 'activity',
         temperature_humidity: 'thermometer',
@@ -29,6 +31,13 @@ function getDeviceIcon(type: string): keyof typeof Feather.glyphMap {
 }
 
 function mapMetadataToDeviceFields(metadata: Record<string, any> | undefined): Partial<DeviceCardModel> {
+    const angle =
+        typeof metadata?.angle === 'number'
+            ? metadata.angle
+            : typeof metadata?.angle === 'string'
+                ? Number(metadata.angle)
+                : undefined;
+
     return {
         brightness: typeof metadata?.brightness === 'number' ? metadata.brightness : undefined,
         temperature: typeof metadata?.temperature === 'number' ? metadata.temperature : undefined,
@@ -43,6 +52,7 @@ function mapMetadataToDeviceFields(metadata: Record<string, any> | undefined): P
             typeof metadata?.gas_detected === 'boolean' ? metadata.gas_detected : undefined,
         rainDetected:
             typeof metadata?.rain_detected === 'boolean' ? metadata.rain_detected : undefined,
+        rainAngle: Number.isFinite(angle) ? angle : undefined,
         distanceLight:
             typeof metadata?.distance_light === 'string' ? metadata.distance_light : undefined,
         buzzer: typeof metadata?.buzzer === 'string' ? metadata.buzzer : undefined,
@@ -61,11 +71,6 @@ export default function RoomDetailScreen() {
     const [devices, setDevices] = useState<DeviceCardModel[]>([]);
     const [loading, setLoading] = useState(true);
     const { subscribe } = useWebSocket(homeId);
-
-    useEffect(() => {
-        if (!id) return;
-        loadRoomData(id);
-    }, [id]);
 
     useEffect(() => {
         if (!homeId) return;
@@ -88,7 +93,7 @@ export default function RoomDetailScreen() {
         return unsubscribe;
     }, [homeId, subscribe]);
 
-    const loadRoomData = async (roomId: string) => {
+    const loadRoomData = useCallback(async (roomId: string) => {
         try {
             setLoading(true);
             const roomResponse = await roomsAPI.get(roomId);
@@ -120,7 +125,14 @@ export default function RoomDetailScreen() {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
+
+    useFocusEffect(
+        useCallback(() => {
+            if (!id) return;
+            void loadRoomData(id);
+        }, [id, loadRoomData]),
+    );
 
     if (loading) {
         return (
@@ -181,7 +193,7 @@ export default function RoomDetailScreen() {
                 <Card style={{ flex: 1, paddingVertical: Spacing.sm }}>
                     <View style={{ alignItems: 'center' }}>
                         <Text style={[Typography.number, { color: colors.success }]}>{onlineCount}</Text>
-                        <Text style={[Typography.caption, { color: colors.textSecondary }]}>Online</Text>
+                        <Text style={[Typography.caption, { color: colors.textSecondary }]}>Trực tuyến</Text>
                     </View>
                 </Card>
             </View>

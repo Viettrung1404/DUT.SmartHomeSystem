@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
 import { Toggle } from '@/components/ui/Toggle';
 import { Slider } from '@/components/ui/Slider';
 import { Badge } from '@/components/ui/Badge';
@@ -38,7 +39,9 @@ function getDeviceIcon(type: string): keyof typeof Feather.glyphMap {
     const iconMap: Record<string, keyof typeof Feather.glyphMap> = {
         light: 'sun',
         fan: 'wind',
-        door: 'door-open',
+        door: 'unlock',
+        lock: 'lock',
+        curtain: 'columns',
         buzzer: 'bell',
         distance_light: 'activity',
         temperature_humidity: 'thermometer',
@@ -51,6 +54,13 @@ function getDeviceIcon(type: string): keyof typeof Feather.glyphMap {
 }
 
 function mapMetadataToDeviceFields(metadata: Record<string, any> | undefined): Partial<DeviceViewModel> {
+    const angle =
+        typeof metadata?.angle === 'number'
+            ? metadata.angle
+            : typeof metadata?.angle === 'string'
+                ? Number(metadata.angle)
+                : undefined;
+
     return {
         temperature: typeof metadata?.temperature === 'number' ? metadata.temperature : undefined,
         humidity: typeof metadata?.humidity === 'number' ? metadata.humidity : undefined,
@@ -66,7 +76,7 @@ function mapMetadataToDeviceFields(metadata: Record<string, any> | undefined): P
             ? metadata.distance_light
             : undefined,
         buzzer: typeof metadata?.buzzer === 'string' ? metadata.buzzer : undefined,
-        rainAngle: typeof metadata?.angle === 'number' ? metadata.angle : undefined,
+        rainAngle: Number.isFinite(angle) ? angle : undefined,
     };
 }
 
@@ -78,7 +88,7 @@ const readOnlyTypes = new Set([
     'sensor',
 ]);
 
-const noToggleTypes = new Set(['door', 'rain_servo']);
+const noToggleTypes = new Set(['door', 'lock', 'curtain', 'rain_servo']);
 
 function mapDevice(response: DeviceResponse): DeviceViewModel {
     const normalizedType = response.type?.toLowerCase?.() ?? response.type;
@@ -93,17 +103,38 @@ function mapDevice(response: DeviceResponse): DeviceViewModel {
     };
 }
 
+function clampOpenPercent(percent: number): number {
+    return Math.max(0, Math.min(100, Math.round(percent)));
+}
+
+function angleToOpenPercent(angle?: number): number {
+    const normalizedAngle = Math.max(0, Math.min(180, Math.round(angle ?? 0)));
+    return clampOpenPercent((normalizedAngle / 180) * 100);
+}
+
+function openPercentToAngle(percent: number): number {
+    const normalizedPercent = clampOpenPercent(percent);
+    return Math.round((normalizedPercent / 100) * 180);
+}
+
 export default function DeviceDetailScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
     const { colors } = useTheme();
     const [device, setDevice] = useState<DeviceViewModel | undefined>(undefined);
     const [homeId, setHomeId] = useState<string | null>(null);
+    const [rainServoOpenPercentDraft, setRainServoOpenPercentDraft] = useState(0);
+    const [isSendingRainAngle, setIsSendingRainAngle] = useState(false);
     const { subscribe } = useWebSocket(homeId);
 
     useEffect(() => {
         if (!id) return;
         loadDevice(id);
     }, [id]);
+
+    useEffect(() => {
+        if (device?.type !== 'rain_servo') return;
+        setRainServoOpenPercentDraft(angleToOpenPercent(device.rainAngle));
+    }, [device?.type, device?.rainAngle]);
 
     useEffect(() => {
         if (!homeId || !device?.id) return;
@@ -178,6 +209,25 @@ export default function DeviceDetailScreen() {
         }
     };
 
+    const applyRainServoOpenPercent = async (nextPercent: number) => {
+        if (!device) return;
+        const clampedPercent = clampOpenPercent(nextPercent);
+        const nextAngle = openPercentToAngle(clampedPercent);
+        setRainServoOpenPercentDraft(clampedPercent);
+        setIsSendingRainAngle(true);
+        updateDevice({ rainAngle: nextAngle });
+        try {
+            const updated = await devicesAPI.command(device.id, 'set_angle', nextAngle);
+            setDevice(mapDevice(updated));
+        } catch (error) {
+            console.error('Failed to set rain servo angle:', error);
+            updateDevice({ rainAngle: device.rainAngle });
+            setRainServoOpenPercentDraft(angleToOpenPercent(device.rainAngle));
+        } finally {
+            setIsSendingRainAngle(false);
+        }
+    };
+
     const iconName = (device.icon || 'circle') as keyof typeof Feather.glyphMap;
 
     return (
@@ -220,12 +270,12 @@ export default function DeviceDetailScreen() {
                 {/* Fan Controls */}
                 {device.type === 'fan' && (
                     <Card style={{ marginBottom: Spacing.md }}>
-                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Toc do quat</Text>
+                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Tốc độ quạt</Text>
                         <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
                             {[
-                                { label: 'Tat', value: 'off' },
-                                { label: 'Yeu', value: 'weak' },
-                                { label: 'Manh', value: 'strong' },
+                                { label: 'Tắt', value: 'off' },
+                                { label: 'Yếu', value: 'weak' },
+                                { label: 'Mạnh', value: 'strong' },
                             ].map((option) => (
                                 <Pressable
                                     key={option.value}
@@ -264,9 +314,11 @@ export default function DeviceDetailScreen() {
                 )}
 
                 {/* Door Controls */}
-                {device.type === 'door' && (
+                {(device.type === 'door' || device.type === 'lock' || device.type === 'curtain') && (
                     <Card style={{ marginBottom: Spacing.md }}>
-                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Cua</Text>
+                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>
+                            {device.type === 'curtain' ? 'Rèm' : 'Cửa / Khóa'}
+                        </Text>
                         <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
                             {[
                                 { label: 'Mo', value: 'open' },
@@ -297,7 +349,7 @@ export default function DeviceDetailScreen() {
                 {/* Buzzer Controls */}
                 {device.type === 'buzzer' && (
                     <Card style={{ marginBottom: Spacing.md }}>
-                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Coi</Text>
+                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Còi</Text>
                         <Toggle
                             value={device.isOn}
                             onToggle={(value) => {
@@ -312,7 +364,7 @@ export default function DeviceDetailScreen() {
                 {/* Distance Light Controls */}
                 {device.type === 'distance_light' && (
                     <Card style={{ marginBottom: Spacing.md }}>
-                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Den khoang cach</Text>
+                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Đèn khoảng cách</Text>
                         <Toggle
                             value={device.isOn}
                             onToggle={(value) => {
@@ -327,18 +379,19 @@ export default function DeviceDetailScreen() {
                 {/* Rain Servo Controls */}
                 {device.type === 'rain_servo' && (
                     <Card style={{ marginBottom: Spacing.md }}>
-                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Che mua</Text>
+                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Mái che mưa</Text>
                         <View style={{ flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.md }}>
                             {[
-                                { label: 'Mua', value: 'wet' },
-                                { label: 'Kho', value: 'dry' },
+                                { label: 'Đóng hết', percent: 0 },
+                                { label: 'Mở 50%', percent: 50 },
+                                { label: 'Mở hết', percent: 100 },
                             ].map((option) => (
                                 <Pressable
-                                    key={option.value}
-                                    onPress={() => sendCommand('set_position', option.value)}
+                                    key={option.label}
+                                    onPress={() => void applyRainServoOpenPercent(option.percent)}
                                     disabled={!device.isOnline}
                                     style={{
-                                        flex: 1,
+                                        flex: option.percent === 50 ? 1.2 : 1,
                                         paddingVertical: Spacing.md,
                                         borderRadius: BorderRadius.md,
                                         backgroundColor: colors.surface,
@@ -348,22 +401,76 @@ export default function DeviceDetailScreen() {
                                         opacity: device.isOnline ? 1 : 0.6,
                                     }}
                                 >
-                                    <Text style={[Typography.captionMedium, { color: colors.textSecondary }]}> {option.label} </Text>
+                                    <Text style={[Typography.captionMedium, { color: colors.textSecondary }]}>{option.label}</Text>
                                 </Pressable>
                             ))}
                         </View>
-                        <Slider
-                            value={device.rainAngle ?? 0}
-                            onValueChange={(val) => {
-                                updateDevice({ rainAngle: val });
-                                sendCommand('set_angle', val);
+                        <View
+                            style={{
+                                backgroundColor: colors.surface,
+                                borderRadius: BorderRadius.md,
+                                borderWidth: 1,
+                                borderColor: colors.border,
+                                padding: Spacing.md,
+                                marginBottom: Spacing.md,
                             }}
-                            label="Goc"
-                            unit="do"
+                        >
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm }}>
+                                <Text style={[Typography.bodyMedium, { color: colors.text }]}>Độ mở hiện tại</Text>
+                                <Text style={[Typography.h3, { color: colors.primary }]}>{rainServoOpenPercentDraft}%</Text>
+                            </View>
+                            <Slider
+                                value={rainServoOpenPercentDraft}
+                                onValueChange={setRainServoOpenPercentDraft}
+                                label="Điều chỉnh độ mở"
+                                unit="%"
+                                min={0}
+                                max={100}
+                                step={1}
+                                disabled={!device.isOnline || isSendingRainAngle}
+                            />
+                            <View style={{ flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md }}>
+                                {[
+                                    { label: '-10%', value: Math.max(0, rainServoOpenPercentDraft - 10) },
+                                    { label: '50%', value: 50 },
+                                    { label: '+10%', value: Math.min(100, rainServoOpenPercentDraft + 10) },
+                                ].map((option) => (
+                                    <Pressable
+                                        key={option.label}
+                                        onPress={() => setRainServoOpenPercentDraft(option.value)}
+                                        disabled={!device.isOnline || isSendingRainAngle}
+                                        style={{
+                                            flex: 1,
+                                            paddingVertical: Spacing.sm,
+                                            borderRadius: BorderRadius.md,
+                                            backgroundColor: colors.background,
+                                            alignItems: 'center',
+                                            borderWidth: 1,
+                                            borderColor: colors.border,
+                                            opacity: device.isOnline ? 1 : 0.6,
+                                        }}
+                                    >
+                                        <Text style={[Typography.captionMedium, { color: colors.textSecondary }]}>{option.label}</Text>
+                                    </Pressable>
+                                ))}
+                            </View>
+                            <Button
+                                title="Áp dụng độ mở"
+                                onPress={() => void applyRainServoOpenPercent(rainServoOpenPercentDraft)}
+                                loading={isSendingRainAngle}
+                                disabled={!device.isOnline}
+                                style={{ marginTop: Spacing.md }}
+                            />
+                        </View>
+                        <Slider
+                            value={angleToOpenPercent(device.rainAngle)}
+                            onValueChange={() => undefined}
+                            label="Độ mở đã đồng bộ"
+                            unit="%"
                             min={0}
-                            max={180}
+                            max={100}
                             step={1}
-                            disabled={!device.isOnline}
+                            disabled
                         />
                     </Card>
                 )}
@@ -371,18 +478,18 @@ export default function DeviceDetailScreen() {
                 {/* Sensor Cards */}
                 {device.type === 'temperature_humidity' && (
                     <Card style={{ marginBottom: Spacing.md }}>
-                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Nhiet do / Do am</Text>
-                        <Text style={[Typography.body, { color: colors.textSecondary }]}>Nhiet do: {device.temperature ?? '--'}°C</Text>
-                        <Text style={[Typography.body, { color: colors.textSecondary, marginTop: Spacing.xs }]}>Do am: {device.humidity ?? '--'}%</Text>
+                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Nhiệt độ / Độ ẩm</Text>
+                        <Text style={[Typography.body, { color: colors.textSecondary }]}>Nhiệt độ: {device.temperature ?? '--'}°C</Text>
+                        <Text style={[Typography.body, { color: colors.textSecondary, marginTop: Spacing.xs }]}>Độ ẩm: {device.humidity ?? '--'}%</Text>
                     </Card>
                 )}
 
                 {device.type === 'distance_sensor' && (
                     <Card style={{ marginBottom: Spacing.md }}>
-                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Sieu am</Text>
-                        <Text style={[Typography.body, { color: colors.textSecondary }]}>Khoang cach: {device.distanceCm ?? '--'}cm</Text>
+                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Siêu âm</Text>
+                        <Text style={[Typography.body, { color: colors.textSecondary }]}>Khoảng cách: {device.distanceCm ?? '--'}cm</Text>
                         <Text style={[Typography.body, { color: colors.textSecondary, marginTop: Spacing.xs }]}>
-                            Canh bao: {device.distanceAlert ? 'Co' : 'Khong'}
+                            Cảnh báo: {device.distanceAlert ? 'Có' : 'Không'}
                         </Text>
                     </Card>
                 )}
@@ -390,36 +497,38 @@ export default function DeviceDetailScreen() {
                 {device.type === 'gas_sensor' && (
                     <Card style={{ marginBottom: Spacing.md }}>
                         <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Gas</Text>
-                        <Text style={[Typography.body, { color: colors.textSecondary }]}>Phat hien: {device.gasDetected ? 'Co' : 'Khong'}</Text>
+                        <Text style={[Typography.body, { color: colors.textSecondary }]}>Phát hiện: {device.gasDetected ? 'Có' : 'Không'}</Text>
                     </Card>
                 )}
 
                 {device.type === 'rain_sensor' && (
                     <Card style={{ marginBottom: Spacing.md }}>
-                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Mua</Text>
-                        <Text style={[Typography.body, { color: colors.textSecondary }]}>Phat hien: {device.rainDetected ? 'Co' : 'Khong'}</Text>
+                        <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Mưa</Text>
+                        <Text style={[Typography.body, { color: colors.textSecondary }]}>Phát hiện: {device.rainDetected ? 'Có' : 'Không'}</Text>
                     </Card>
                 )}
                 {/* Device Info */}
                 <Card>
-                    <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Thong tin thiet bi</Text>
+                    <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.md }]}>Thông tin thiết bị</Text>
                     {[
                         {
-                            label: 'Loai',
+                            label: 'Loại',
                             value:
-                                device.type === 'light' ? 'Den'
-                                    : device.type === 'fan' ? 'Quat'
-                                        : device.type === 'door' ? 'Cua'
-                                            : device.type === 'buzzer' ? 'Coi'
-                                                : device.type === 'distance_light' ? 'Den khoang cach'
-                                                    : device.type === 'temperature_humidity' ? 'Nhiet do / Do am'
-                                                        : device.type === 'distance_sensor' ? 'Sieu am'
+                                device.type === 'light' ? 'Đèn'
+                                    : device.type === 'fan' ? 'Quạt'
+                                        : device.type === 'door' ? 'Cửa'
+                                            : device.type === 'lock' ? 'Khóa'
+                                                : device.type === 'curtain' ? 'Rèm'
+                                            : device.type === 'buzzer' ? 'Còi'
+                                                : device.type === 'distance_light' ? 'Đèn khoảng cách'
+                                                    : device.type === 'temperature_humidity' ? 'Nhiệt độ / Độ ẩm'
+                                                        : device.type === 'distance_sensor' ? 'Siêu âm'
                                                             : device.type === 'gas_sensor' ? 'Gas'
-                                                                : device.type === 'rain_sensor' ? 'Mua'
-                                                                    : device.type === 'rain_servo' ? 'Che mua'
-                                                                        : 'Khac',
+                                                                : device.type === 'rain_sensor' ? 'Mưa'
+                                                                    : device.type === 'rain_servo' ? 'Mái che mưa'
+                                                                        : 'Khác',
                         },
-                        { label: 'Trang thai', value: device.isOnline ? 'Truc tuyen' : 'Ngoai tuyen' },
+                        { label: 'Trạng thái', value: device.isOnline ? 'Trực tuyến' : 'Ngoại tuyến' },
                         { label: 'ID', value: device.id },
                     ].map((info, i) => (
                         <View
