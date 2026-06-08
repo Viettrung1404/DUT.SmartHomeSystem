@@ -67,7 +67,7 @@ const API_BASE_URL = resolveApiBaseUrl();
 
 function createNetworkError(): Error {
     return new Error(
-        `Khong the ket noi backend (${API_BASE_URL}). Neu dang dung dien thoai that, dat EXPO_PUBLIC_API_URL=http://<IP-may-ban>:8000`
+        `Không thể kết nối backend (${API_BASE_URL}). Nếu đang dùng điện thoại thật, đặt EXPO_PUBLIC_API_URL=http://<IP-máy-bạn>:8000`
     );
 }
 
@@ -76,6 +76,10 @@ const TOKEN_STORAGE_KEY = 'smarthome.auth.tokens';
 interface StoredTokens {
     accessToken: string;
     refreshToken: string;
+}
+
+interface MessageResponse {
+    message: string;
 }
 
 interface WebStorageLike {
@@ -161,6 +165,10 @@ export function clearTokens() {
 
 export function getAccessToken() {
     return accessToken;
+}
+
+export function getRefreshToken() {
+    return refreshToken;
 }
 
 async function refreshAccessToken(): Promise<boolean> {
@@ -259,6 +267,34 @@ export const authAPI = {
         }),
 
     me: () => apiFetch<UserResponse>('/auth/me'),
+    logout: async (access?: string | null, refresh?: string | null): Promise<MessageResponse> => {
+        const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+        };
+
+        if (access) {
+            headers.Authorization = `Bearer ${access}`;
+        }
+
+        let res: Response;
+        try {
+            res = await fetch(`${API_BASE_URL}/auth/logout`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ refresh_token: refresh ?? undefined }),
+            });
+        } catch {
+            throw createNetworkError();
+        }
+
+        if (!res.ok) {
+            const error = await res.json().catch(() => ({ detail: 'Logout failed' }));
+            const message = typeof error.detail === 'string' ? error.detail : `Lỗi ${res.status}`;
+            throw new Error(message);
+        }
+
+        return res.json();
+    },
 };
 
 // ============ HOMES ============

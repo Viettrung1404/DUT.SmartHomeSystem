@@ -31,7 +31,7 @@ export function Badge({ variant = 'online', count, label, riskLevel, size = 'sm'
                 />
                 {label !== undefined && (
                     <Text style={[Typography.caption, { color: isOnline ? colors.success : colors.textTertiary }]}>
-                        {label ?? (isOnline ? 'Online' : 'Offline')}
+                        {label ?? (isOnline ? 'Trực tuyến' : 'Ngoại tuyến')}
                     </Text>
                 )}
             </View>
