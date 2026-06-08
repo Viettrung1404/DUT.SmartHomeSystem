@@ -50,7 +50,7 @@ const DEVICE_TYPE_LABELS: Record<DeviceType, string> = {
     distance_sensor: 'Siêu âm',
     gas_sensor: 'Gas',
     rain_sensor: 'Mưa',
-    rain_servo: 'Che mưa',
+    rain_servo: 'Mái che mưa',
 };
 
 function normalizeEditableType(type: string): DeviceType {

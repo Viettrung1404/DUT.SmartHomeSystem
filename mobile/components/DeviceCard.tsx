@@ -25,6 +25,7 @@ export interface DeviceCardModel {
     distanceAlert?: boolean;
     gasDetected?: boolean;
     rainDetected?: boolean;
+    rainAngle?: number;
     distanceLight?: string;
     buzzer?: string;
 }
@@ -48,6 +49,10 @@ export function DeviceCard({ device, onToggle, onPress }: DeviceCardProps) {
     const noToggleTypes = new Set(['door', 'rain_servo']);
     const deviceType = device.type?.toLowerCase?.() ?? device.type;
     const isToggleAllowed = !readOnlyTypes.has(deviceType) && !noToggleTypes.has(deviceType);
+    const rainServoOpenPercent =
+        deviceType === 'rain_servo' && typeof device.rainAngle === 'number'
+            ? Math.max(0, Math.min(100, Math.round((device.rainAngle / 180) * 100)))
+            : undefined;
 
     // Pulse animation when status changes
     useEffect(() => {
@@ -83,6 +88,25 @@ export function DeviceCard({ device, onToggle, onPress }: DeviceCardProps) {
                             size={20}
                             color={device.isOn ? colors.primary : colors.iconMuted}
                         />
+                        {rainServoOpenPercent !== undefined && (
+                            <View
+                                style={{
+                                    position: 'absolute',
+                                    right: -6,
+                                    bottom: -6,
+                                    minWidth: 28,
+                                    paddingHorizontal: 6,
+                                    paddingVertical: 2,
+                                    borderRadius: 999,
+                                    backgroundColor: colors.primary,
+                                    borderWidth: 2,
+                                    borderColor: colors.card,
+                                    alignItems: 'center',
+                                }}
+                            >
+                                <Text style={[Typography.label, { color: '#FFFFFF' }]}>{rainServoOpenPercent}%</Text>
+                            </View>
+                        )}
                     </View>
                     {isToggleAllowed && (
                         <Toggle
@@ -109,12 +133,12 @@ export function DeviceCard({ device, onToggle, onPress }: DeviceCardProps) {
                         )}
                         {device.speed && (
                             <Text style={[Typography.caption, { color: colors.textSecondary }]}>
-                                Quat: {device.speed}
+                                Quạt: {device.speed}
                             </Text>
                         )}
                         {device.door && deviceType !== 'rain_servo' && (
                             <Text style={[Typography.caption, { color: colors.textSecondary }]}>
-                                Cua: {device.door}
+                                Cửa: {device.door}
                             </Text>
                         )}
                         {device.distanceCm !== undefined && (
@@ -124,22 +148,27 @@ export function DeviceCard({ device, onToggle, onPress }: DeviceCardProps) {
                         )}
                         {device.gasDetected !== undefined && (
                             <Text style={[Typography.caption, { color: colors.textSecondary }]}>
-                                Gas: {device.gasDetected ? 'Co' : 'Khong'}
+                                Gas: {device.gasDetected ? 'Có' : 'Không'}
                             </Text>
                         )}
                         {device.rainDetected !== undefined && (
                             <Text style={[Typography.caption, { color: colors.textSecondary }]}>
-                                Mua: {device.rainDetected ? 'Co' : 'Khong'}
+                                Mưa: {device.rainDetected ? 'Có' : 'Không'}
+                            </Text>
+                        )}
+                        {rainServoOpenPercent !== undefined && (
+                            <Text style={[Typography.caption, { color: colors.textSecondary }]}>
+                                Mở: {rainServoOpenPercent}%
                             </Text>
                         )}
                         {device.distanceLight && (
                             <Text style={[Typography.caption, { color: colors.textSecondary }]}>
-                                Den: {device.distanceLight}
+                                Đèn: {device.distanceLight}
                             </Text>
                         )}
                         {device.buzzer && (
                             <Text style={[Typography.caption, { color: colors.textSecondary }]}>
-                                Coi: {device.buzzer}
+                                Còi: {device.buzzer}
                             </Text>
                         )}
                         {device.temperature !== undefined && (
@@ -149,12 +178,12 @@ export function DeviceCard({ device, onToggle, onPress }: DeviceCardProps) {
                         )}
                         {device.humidity !== undefined && (
                             <Text style={[Typography.caption, { color: colors.textSecondary }]}>
-                                💧{device.humidity}%
+                                Độ ẩm: {device.humidity}%
                             </Text>
                         )}
                         {device.battery !== undefined && (
                             <Text style={[Typography.caption, { color: colors.textSecondary }]}>
-                                🔋{device.battery}%
+                                Pin: {device.battery}%
                             </Text>
                         )}
                     </View>

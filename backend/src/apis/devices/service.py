@@ -96,6 +96,27 @@ def _coerce_type_for_response(device: Device, metadata: dict) -> str:
     return _device_type_value(device)
 
 
+def _coerce_rain_servo_angle(metadata: dict | None) -> float | None:
+    if not isinstance(metadata, dict):
+        return None
+    angle = metadata.get("angle")
+    if isinstance(angle, (int, float)):
+        return float(angle)
+    if isinstance(angle, str):
+        try:
+            return float(angle.strip())
+        except ValueError:
+            return None
+    return None
+
+
+def _status_from_state(device: Device, metadata: dict) -> bool:
+    if _device_kind(device) == "rain_servo":
+        angle = _coerce_rain_servo_angle(metadata)
+        return bool(angle and angle > 0)
+    return metadata.get("power", "OFF") == "ON"
+
+
 def _check_device_access(db: Session, device: Device, user_id: UUID):
     room = db.query(Room).filter(Room.id == device.room_id).first()
     if not room or not getattr(room, "is_active", True):
@@ -334,9 +355,9 @@ def to_response(device: Device) -> models.DeviceResponse:
 
     if state:
         is_online = state.is_online
-        status_bool = state.state.get("power", "OFF") == "ON"
         last_seen = state.last_updated
         meta.update(state.state)
+        status_bool = _status_from_state(device, meta)
 
     if isinstance(meta, dict) and meta.get("kind") == "rain_servo":
         meta.pop("door", None)

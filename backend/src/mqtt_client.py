@@ -196,6 +196,29 @@ def _merge_status_payload(existing_state: dict | None, payload: dict) -> dict:
     return state
 
 
+def _coerce_angle(metadata: dict | None) -> float | None:
+    if not isinstance(metadata, dict):
+        return None
+    angle = metadata.get("angle")
+    if isinstance(angle, (int, float)):
+        return float(angle)
+    if isinstance(angle, str):
+        try:
+            return float(angle.strip())
+        except ValueError:
+            return None
+    return None
+
+
+def _device_status_for_broadcast(metadata: dict) -> bool:
+    if "power" in metadata:
+        return metadata.get("power") == "ON"
+    angle = _coerce_angle(metadata)
+    if angle is not None:
+        return angle > 0
+    return False
+
+
 def _set_device_state(db, device, payload: dict, online: bool | None = None) -> tuple[bool, dict]:
     from sqlalchemy.orm.attributes import flag_modified
     from src.entities.models import DeviceState, TriggerSource
@@ -234,21 +257,13 @@ def _broadcast_device_state(home_id: str, device_id: str, online: bool, metadata
                 home_id,
                 device_id,
                 {
-                    "status": metadata.get("power") == "ON",
+                    "status": _device_status_for_broadcast(metadata),
                     "online": online,
                     "metadata": metadata,
                 },
             ),
             _event_loop,
         )
-    scope, scope_id, message_type = parts
-
-    if message_type == 'status':
-        _handle_device_status(scope_id, payload)
-    elif message_type == 'energy':
-        _handle_energy_data(scope_id, payload)
-    elif message_type == 'face':
-        _handle_face_image(scope_id, payload)
 
 
 def _handle_device_status(device_id_str: str, payload: dict):

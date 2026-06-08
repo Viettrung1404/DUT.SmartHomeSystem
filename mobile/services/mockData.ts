@@ -49,9 +49,8 @@ export interface Device {
     icon: string;
     isOnline: boolean;
     isOn: boolean;
-    // Optional params
-    brightness?: number; // 0-100
-    temperature?: number; // degrees
+    brightness?: number;
+    temperature?: number;
     humidity?: number;
     speed?: string;
     door?: string;
@@ -94,8 +93,6 @@ export interface ChatMessage {
     deviceCard?: Device;
 }
 
-// ===== MOCK DATA =====
-
 export const mockUser: User = {
     id: '1',
     name: 'Trung',
@@ -117,7 +114,7 @@ export const mockRooms: Room[] = [
     { id: '3', homeId: '1', name: 'Nhà bếp', icon: 'coffee', deviceCount: 5, activeDevices: 2, isOnline: true },
     { id: '4', homeId: '1', name: 'Phòng tắm', icon: 'droplet', deviceCount: 3, activeDevices: 0, isOnline: true },
     { id: '5', homeId: '1', name: 'Ban công', icon: 'sun', deviceCount: 3, activeDevices: 1, isOnline: true },
-    { id: '6', homeId: '1', name: 'Garage', icon: 'truck', deviceCount: 3, activeDevices: 1, isOnline: false },
+    { id: '6', homeId: '1', name: 'Ga ra', icon: 'truck', deviceCount: 3, activeDevices: 1, isOnline: false },
 ];
 
 export const mockDevices: Record<string, Device[]> = {
@@ -126,7 +123,7 @@ export const mockDevices: Record<string, Device[]> = {
         { id: 'd2', roomId: '1', name: 'Đèn bàn', type: 'light', icon: 'sun', isOnline: true, isOn: true, brightness: 60 },
         { id: 'd3', roomId: '1', name: 'Cảm biến nhiệt độ', type: 'temperature_humidity', icon: 'thermometer', isOnline: true, isOn: true, temperature: 28, humidity: 60 },
         { id: 'd4', roomId: '1', name: 'Cảm biến khoảng cách', type: 'distance_sensor', icon: 'radio', isOnline: true, isOn: true, distanceCm: 120 },
-        { id: 'd5', roomId: '1', name: 'Che mưa', type: 'rain_servo', icon: 'droplet', isOnline: true, isOn: false },
+        { id: 'd5', roomId: '1', name: 'Mái che mưa', type: 'rain_servo', icon: 'droplet', isOnline: true, isOn: false },
         { id: 'd6', roomId: '1', name: 'Cảm biến mưa', type: 'rain_sensor', icon: 'cloud-rain', isOnline: true, isOn: false, rainDetected: false },
     ],
     '2': [
@@ -150,11 +147,11 @@ export const mockDevices: Record<string, Device[]> = {
     '5': [
         { id: 'd19', roomId: '5', name: 'Đèn ban công', type: 'light', icon: 'sun', isOnline: true, isOn: true, brightness: 50 },
         { id: 'd20', roomId: '5', name: 'Cảm biến nhiệt độ', type: 'temperature_humidity', icon: 'thermometer', isOnline: true, isOn: true, temperature: 30, humidity: 70 },
-        { id: 'd21', roomId: '5', name: 'Che mưa ban công', type: 'rain_servo', icon: 'droplet', isOnline: true, isOn: false },
+        { id: 'd21', roomId: '5', name: 'Mái che mưa ban công', type: 'rain_servo', icon: 'droplet', isOnline: true, isOn: false },
     ],
     '6': [
-        { id: 'd22', roomId: '6', name: 'Đèn garage', type: 'light', icon: 'sun', isOnline: false, isOn: false, brightness: 0 },
-        { id: 'd23', roomId: '6', name: 'Cửa garage', type: 'door', icon: 'door-open', isOnline: false, isOn: false, door: 'closed' },
+        { id: 'd22', roomId: '6', name: 'Đèn ga ra', type: 'light', icon: 'sun', isOnline: false, isOn: false, brightness: 0 },
+        { id: 'd23', roomId: '6', name: 'Cửa ga ra', type: 'door', icon: 'door-open', isOnline: false, isOn: false, door: 'closed' },
         { id: 'd24', roomId: '6', name: 'Cảm biến khoảng cách', type: 'distance_sensor', icon: 'radio', isOnline: false, isOn: false, distanceCm: 0 },
     ],
 };
@@ -174,7 +171,7 @@ export const mockAIInsights: AIInsight[] = [
 export const mockSecurityAlerts: SecurityAlert[] = [
     { id: 's1', message: 'Cửa trước đã được mở', timestamp: '14:30', severity: 'medium', icon: 'door-open' },
     { id: 's2', message: 'Phát hiện chuyển động ở ban công', timestamp: '13:15', severity: 'low', icon: 'activity' },
-    { id: 's3', message: 'Camera garage mất kết nối', timestamp: '12:00', severity: 'high', icon: 'wifi-off' },
+    { id: 's3', message: 'Camera ga ra mất kết nối', timestamp: '12:00', severity: 'high', icon: 'wifi-off' },
     { id: 's4', message: 'Cửa sau đã khóa tự động', timestamp: '11:30', severity: 'low', icon: 'lock' },
     { id: 's5', message: 'Cảm biến khói kích hoạt nhẹ', timestamp: '10:45', severity: 'high', icon: 'alert-circle' },
 ];
@@ -184,7 +181,6 @@ export const mockChatMessages: ChatMessage[] = [
     { id: 'c2', text: 'Tắt đèn phòng ngủ', isUser: true, timestamp: '14:01' },
     { id: 'c3', text: 'Đã tắt đèn phòng ngủ cho bạn.', isUser: false, timestamp: '14:01' },
 ];
-
 
 export const quickCommands = [
     'Tắt đèn phòng ngủ',
