@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, FlatList, ActivityIndicator } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Header } from '@/components/ui/Header';
@@ -16,7 +16,9 @@ function getDeviceIcon(type: string): keyof typeof Feather.glyphMap {
     const iconMap: Record<string, keyof typeof Feather.glyphMap> = {
         light: 'sun',
         fan: 'wind',
-        door: 'door-open',
+        door: 'unlock',
+        lock: 'lock',
+        curtain: 'columns',
         buzzer: 'bell',
         distance_light: 'activity',
         temperature_humidity: 'thermometer',
@@ -63,11 +65,6 @@ export default function RoomDetailScreen() {
     const { subscribe } = useWebSocket(homeId);
 
     useEffect(() => {
-        if (!id) return;
-        loadRoomData(id);
-    }, [id]);
-
-    useEffect(() => {
         if (!homeId) return;
         const unsubscribe = subscribe('device_update', (message) => {
             if (!message.device_id) return;
@@ -88,7 +85,7 @@ export default function RoomDetailScreen() {
         return unsubscribe;
     }, [homeId, subscribe]);
 
-    const loadRoomData = async (roomId: string) => {
+    const loadRoomData = useCallback(async (roomId: string) => {
         try {
             setLoading(true);
             const roomResponse = await roomsAPI.get(roomId);
@@ -120,7 +117,14 @@ export default function RoomDetailScreen() {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
+
+    useFocusEffect(
+        useCallback(() => {
+            if (!id) return;
+            void loadRoomData(id);
+        }, [id, loadRoomData]),
+    );
 
     if (loading) {
         return (

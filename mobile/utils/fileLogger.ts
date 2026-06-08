@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 
 const LOG_DIR = FileSystem.documentDirectory ? `${FileSystem.documentDirectory}logs` : null;
 const LOG_FILE = LOG_DIR ? `${LOG_DIR}/app.log` : null;
@@ -21,9 +21,9 @@ export async function logToFile(message: string) {
     const line = `${timestamp} ${message}\n`;
     try {
         await ensureLogDir();
-        await FileSystem.writeAsStringAsync(LOG_FILE, line, {
+        const currentContent = await FileSystem.readAsStringAsync(LOG_FILE).catch(() => '');
+        await FileSystem.writeAsStringAsync(LOG_FILE, `${currentContent}${line}`, {
             encoding: FileSystem.EncodingType.UTF8,
-            append: true,
         });
     } catch {
         // Ignore file system errors on unsupported platforms.

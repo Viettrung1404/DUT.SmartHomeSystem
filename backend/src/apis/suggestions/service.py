@@ -1,10 +1,8 @@
-from src.entities.models import SuggestionLog
-
-from sqlalchemy.orm import Session
-from sqlalchemy import text, desc
-
-from datetime import datetime
 import json
+from datetime import datetime, timedelta
+
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 LATEST_FEEDBACK_JOIN = """
     LEFT JOIN LATERAL (
@@ -19,7 +17,23 @@ LATEST_FEEDBACK_JOIN = """
     ) fb ON true
 """
 
+
 class SuggestionService:
+    @staticmethod
+    def _suggestion_belongs_to_user(session: Session, suggestion_id: int, user_id: str) -> bool:
+        row = session.execute(
+            text(
+                """
+                SELECT 1
+                FROM suggestion_logs
+                WHERE id = :suggestion_id
+                  AND user_id = CAST(:user_id AS uuid)
+                """
+            ),
+            {"suggestion_id": suggestion_id, "user_id": user_id},
+        ).first()
+        return row is not None
+
     @staticmethod
     def get_user_suggestions(
         session: Session,
@@ -28,12 +42,6 @@ class SuggestionService:
         offset: int = 0,
         include_old: bool = False,
     ) -> tuple[int, list[dict]]:
-        """
-        Lấy danh sách gợi ý cho user.
-        
-        include_old=False: chỉ lấy gợi ý 30 ngày gần nhất (active)
-        include_old=True: lấy tất cả gợi ý
-        """
         total_sql = """
             SELECT COUNT(*)
             FROM suggestion_logs
@@ -60,7 +68,7 @@ class SuggestionService:
 
         total = int(session.execute(text(total_sql), params).scalar() or 0)
         rows = session.execute(text(list_sql), params).mappings().all()
-        return total, [dict(r) for r in rows]
+        return total, [dict(row) for row in rows]
 
     @staticmethod
     def get_user_suggestions_by_action_type(
@@ -69,23 +77,29 @@ class SuggestionService:
         action_type: str,
         limit: int = 20,
     ) -> list[dict]:
-        """Lấy gợi ý theo loại action."""
-        rows = session.execute(text("""
-            SELECT sl.id, sl.user_id, sl.pattern_id, sl.action_type::text AS action_type,
-                   sl.suggestion_text, sl.suggestion_json, sl.was_accepted,
-                   fb.feedback_type AS latest_feedback_type,
-                   fb.feedback_reason AS latest_feedback_reason,
-                   fb.feedback_time,
-                   sl.created_at
-            FROM suggestion_logs sl
-            """ + LATEST_FEEDBACK_JOIN + """
-            WHERE sl.user_id = CAST(:user_id AS uuid)
-                            AND sl.action_type::text = :action_type
-              AND sl.created_at >= NOW() - INTERVAL '30 days'
-            ORDER BY sl.created_at DESC
-            LIMIT :limit
-        """), {"user_id": user_id, "action_type": action_type, "limit": limit}).mappings().all()
-        return [dict(r) for r in rows]
+        rows = session.execute(
+            text(
+                """
+                SELECT sl.id, sl.user_id, sl.pattern_id, sl.action_type::text AS action_type,
+                       sl.suggestion_text, sl.suggestion_json, sl.was_accepted,
+                       fb.feedback_type AS latest_feedback_type,
+                       fb.feedback_reason AS latest_feedback_reason,
+                       fb.feedback_time,
+                       sl.created_at
+                FROM suggestion_logs sl
+                """
+                + LATEST_FEEDBACK_JOIN
+                + """
+                WHERE sl.user_id = CAST(:user_id AS uuid)
+                  AND sl.action_type::text = :action_type
+                  AND sl.created_at >= NOW() - INTERVAL '30 days'
+                ORDER BY sl.created_at DESC
+                LIMIT :limit
+                """
+            ),
+            {"user_id": user_id, "action_type": action_type, "limit": limit},
+        ).mappings().all()
+        return [dict(row) for row in rows]
 
     @staticmethod
     def record_suggestion_feedback(
@@ -95,49 +109,61 @@ class SuggestionService:
         feedback_type: str,
         feedback_reason: str | None = None,
     ) -> dict | None:
-        """Lưu feedback chuẩn hóa cho một suggestion."""
-        row = session.execute(text("""
-            INSERT INTO suggestion_feedback_logs (
-                suggestion_id,
-                user_id,
-                feedback_type,
-                feedback_reason,
-                feedback_time
-            )
-            VALUES (
-                :suggestion_id,
-                CAST(:user_id AS uuid),
-                :feedback_type,
-                :feedback_reason,
-                NOW()
-            )
-            ON CONFLICT (suggestion_id)
-            DO UPDATE SET
-                user_id = EXCLUDED.user_id,
-                feedback_type = EXCLUDED.feedback_type,
-                feedback_reason = EXCLUDED.feedback_reason,
-                feedback_time = EXCLUDED.feedback_time
-            RETURNING id, suggestion_id, user_id, feedback_type::text AS feedback_type,
-                      feedback_reason, feedback_time, created_at
-        """), {
-            "suggestion_id": suggestion_id,
-            "user_id": user_id,
-            "feedback_type": feedback_type,
-            "feedback_reason": feedback_reason,
-        }).mappings().first()
+        if not SuggestionService._suggestion_belongs_to_user(session, suggestion_id, user_id):
+            return None
+
+        row = session.execute(
+            text(
+                """
+                INSERT INTO suggestion_feedback_logs (
+                    suggestion_id,
+                    user_id,
+                    feedback_type,
+                    feedback_reason,
+                    feedback_time
+                )
+                VALUES (
+                    :suggestion_id,
+                    CAST(:user_id AS uuid),
+                    :feedback_type,
+                    :feedback_reason,
+                    NOW()
+                )
+                ON CONFLICT (suggestion_id)
+                DO UPDATE SET
+                    user_id = EXCLUDED.user_id,
+                    feedback_type = EXCLUDED.feedback_type,
+                    feedback_reason = EXCLUDED.feedback_reason,
+                    feedback_time = EXCLUDED.feedback_time
+                RETURNING id, suggestion_id, user_id, feedback_type::text AS feedback_type,
+                          feedback_reason, feedback_time, created_at
+                """
+            ),
+            {
+                "suggestion_id": suggestion_id,
+                "user_id": user_id,
+                "feedback_type": feedback_type,
+                "feedback_reason": feedback_reason,
+            },
+        ).mappings().first()
 
         if not row:
             return None
 
-        session.execute(text("""
-            UPDATE suggestion_logs
-            SET was_accepted = CASE
-                WHEN :feedback_type = 'ACCEPT' THEN true
-                WHEN :feedback_type = 'REJECT' THEN false
-                ELSE NULL
-            END
-            WHERE id = :suggestion_id
-        """), {"suggestion_id": suggestion_id, "feedback_type": feedback_type})
+        session.execute(
+            text(
+                """
+                UPDATE suggestion_logs
+                SET was_accepted = CASE
+                    WHEN :feedback_type = 'ACCEPT' THEN true
+                    WHEN :feedback_type = 'REJECT' THEN false
+                    ELSE NULL
+                END
+                WHERE id = :suggestion_id
+                """
+            ),
+            {"suggestion_id": suggestion_id, "feedback_type": feedback_type},
+        )
 
         session.commit()
         return dict(row)
@@ -146,23 +172,17 @@ class SuggestionService:
     def mark_suggestion_accepted(
         session: Session,
         suggestion_id: int,
+        user_id: str,
         was_accepted: bool,
     ) -> dict | None:
-        """Đánh dấu gợi ý là được chấp nhận hay từ chối."""
-        suggestion = session.execute(text("""
-            SELECT id, user_id
-            FROM suggestion_logs
-            WHERE id = :id
-        """), {"id": suggestion_id}).mappings().first()
-
-        if not suggestion:
+        if not SuggestionService._suggestion_belongs_to_user(session, suggestion_id, user_id):
             return None
 
         feedback_type = "ACCEPT" if was_accepted else "REJECT"
         return SuggestionService.record_suggestion_feedback(
             session=session,
             suggestion_id=suggestion_id,
-            user_id=str(suggestion["user_id"]),
+            user_id=user_id,
             feedback_type=feedback_type,
             feedback_reason=None,
         )
@@ -173,32 +193,35 @@ class SuggestionService:
         home_id: str,
         limit: int = 100,
     ):
-        """
-        Lấy tất cả gợi ý active của nhà (từ tất cả thành viên).
-        Dùng cho admin dashboard.
-        """
-        suggestions = session.execute(text("""
-            SELECT
-                                sl.id, sl.user_id, sl.pattern_id, sl.action_type,
-                                sl.suggestion_text, sl.suggestion_json,
-                                sl.was_accepted,
-                                fb.feedback_type AS latest_feedback_type,
-                                fb.feedback_reason AS latest_feedback_reason,
-                                fb.feedback_time,
-                                sl.created_at,
-                u.full_name
-                        FROM suggestion_logs sl
-                        """ + LATEST_FEEDBACK_JOIN + """
-            JOIN users u ON u.id = sl.user_id
-            JOIN home_users hu ON hu.user_id = u.id
-            WHERE hu.home_id = :home_id
-              AND sl.created_at >= NOW() - INTERVAL '30 days'
-                            AND fb.feedback_type IS NULL
-            ORDER BY sl.created_at DESC
-            LIMIT :limit
-        """), {"home_id": home_id, "limit": limit}).fetchall()
-        
+        suggestions = session.execute(
+            text(
+                """
+                SELECT
+                    sl.id, sl.user_id, sl.pattern_id, sl.action_type,
+                    sl.suggestion_text, sl.suggestion_json,
+                    sl.was_accepted,
+                    fb.feedback_type AS latest_feedback_type,
+                    fb.feedback_reason AS latest_feedback_reason,
+                    fb.feedback_time,
+                    sl.created_at,
+                    u.full_name
+                FROM suggestion_logs sl
+                """
+                + LATEST_FEEDBACK_JOIN
+                + """
+                JOIN users u ON u.id = sl.user_id
+                JOIN home_users hu ON hu.user_id = u.id
+                WHERE hu.home_id = :home_id
+                  AND sl.created_at >= NOW() - INTERVAL '30 days'
+                  AND fb.feedback_type IS NULL
+                ORDER BY sl.created_at DESC
+                LIMIT :limit
+                """
+            ),
+            {"home_id": home_id, "limit": limit},
+        ).fetchall()
         return suggestions
+
     @staticmethod
     def log_decision(
         session: Session,
@@ -209,28 +232,32 @@ class SuggestionService:
         should_suggest: bool,
         blocked_by: str | None = None,
         cooldown_signature: str | None = None,
-        metadata_json: dict | None = None
+        metadata_json: dict | None = None,
     ):
-        """Lưu vết mọi quyết định (audit log) để phân tích guardrail metrics."""
-        session.execute(text("""
-            INSERT INTO suggestion_decision_logs (
-                pattern_id, home_id, user_id, decision_score, 
-                should_suggest, blocked_by, cooldown_signature, metadata_json
-            )
-            VALUES (
-                :pid, CAST(:hid AS uuid), CAST(:uid AS uuid), :score,
-                :should, :blocked, :signature, CAST(:meta AS jsonb)
-            )
-        """), {
-            "pid": pattern_id,
-            "hid": home_id,
-            "uid": user_id,
-            "score": decision_score,
-            "should": should_suggest,
-            "blocked": blocked_by,
-            "signature": cooldown_signature,
-            "meta": json.dumps(metadata_json) if metadata_json else None
-        })
+        session.execute(
+            text(
+                """
+                INSERT INTO suggestion_decision_logs (
+                    pattern_id, home_id, user_id, decision_score,
+                    should_suggest, blocked_by, cooldown_signature, metadata_json
+                )
+                VALUES (
+                    :pid, CAST(:hid AS uuid), CAST(:uid AS uuid), :score,
+                    :should, :blocked, :signature, CAST(:meta AS jsonb)
+                )
+                """
+            ),
+            {
+                "pid": pattern_id,
+                "hid": home_id,
+                "uid": user_id,
+                "score": decision_score,
+                "should": should_suggest,
+                "blocked": blocked_by,
+                "signature": cooldown_signature,
+                "meta": json.dumps(metadata_json) if metadata_json else None,
+            },
+        )
         session.commit()
 
     @staticmethod
@@ -238,26 +265,10 @@ class SuggestionService:
         session: Session,
         home_id: str | None = None,
         user_id: str | None = None,
-        days: int = 30
+        days: int = 30,
     ) -> dict:
-        """
-        Tính toán 3 nhóm metrics: Suggestion, Quality, Guardrail.
-        Normalize theo timezone Asia/Ho_Chi_Minh.
-        """
-        import json
-        from datetime import datetime, timedelta
-
         since = datetime.now() - timedelta(days=days)
-        
-        base_filter = "AND created_at >= :since"
-        if home_id:
-            # Note: suggestion_logs doesn't have home_id directly, join with patterns or users
-            pass 
-        
-        # 1. Suggestion Metrics (Sent/Feedback)
-        # We need a robust way to filter by home_id if provided.
-        # Joining suggestion_logs with user_patterns to get home_id.
-        
+
         metrics_query = """
             WITH filtered_suggestions AS (
                 SELECT sl.*, up.pattern_type, up.home_id
@@ -268,7 +279,7 @@ class SuggestionService:
                 AND (:uid IS NULL OR sl.user_id = CAST(:uid AS uuid))
             ),
             feedback_stats AS (
-                SELECT 
+                SELECT
                     COUNT(*) FILTER (WHERE was_accepted = true) as accepted,
                     COUNT(*) FILTER (WHERE was_accepted = false) as rejected,
                     COUNT(*) FILTER (WHERE latest_feedback_type = 'IGNORE') as ignored,
@@ -279,13 +290,13 @@ class SuggestionService:
                     """ + LATEST_FEEDBACK_JOIN.replace("sl.id", "fs.id") + """
                 ) f
             )
-            SELECT 
+            SELECT
                 (SELECT COUNT(*) FROM filtered_suggestions) as sent_count,
                 (SELECT accepted FROM feedback_stats) as accepted,
                 (SELECT rejected FROM feedback_stats) as rejected,
                 (SELECT ignored FROM feedback_stats) as ignored
         """
-        
+
         res = session.execute(text(metrics_query), {"since": since, "hid": home_id, "uid": user_id}).mappings().first()
         sent_count = res["sent_count"] or 0
         accepted = res["accepted"] or 0
@@ -293,9 +304,8 @@ class SuggestionService:
         ignored = res["ignored"] or 0
         total_feedback = accepted + rejected + ignored
 
-        # 2. Guardrail Metrics (Suppressed by Cooldown)
         guardrail_query = """
-            SELECT 
+            SELECT
                 COUNT(*) FILTER (WHERE blocked_by = 'COOLDOWN' OR blocked_by = 'same_pattern_cooldown' OR blocked_by = 'daily_suggestion_cap') as cooldown_suppressions,
                 COUNT(*) FILTER (WHERE metadata_json->'priority_reason' ? 'hard_override_anomaly_high_energy_repeated') as priority_overrides
             FROM suggestion_decision_logs
@@ -303,16 +313,14 @@ class SuggestionService:
             AND (:hid IS NULL OR home_id = CAST(:hid AS uuid))
             AND (:uid IS NULL OR user_id = CAST(:uid AS uuid))
         """
-        g_res = session.execute(text(guardrail_query), {"since": since, "hid": home_id, "uid": user_id}).mappings().first()
-        cooldown_suppressions = g_res["cooldown_suppressions"] or 0
+        guardrail_res = session.execute(text(guardrail_query), {"since": since, "hid": home_id, "uid": user_id}).mappings().first()
+        cooldown_suppressions = guardrail_res["cooldown_suppressions"] or 0
 
-        # 3. Quality Metrics
         effective_accept_rate = (accepted / total_feedback * 100) if total_feedback > 0 else 0.0
         rejection_rate = (rejected / total_feedback * 100) if total_feedback > 0 else 0.0
         ignore_rate = (ignored / total_feedback * 100) if total_feedback > 0 else 0.0
         false_alert_rate = (rejected / sent_count * 100) if sent_count > 0 else 0.0
 
-        # 4. Action Type Distribution
         action_dist_query = """
             SELECT action_type::text, COUNT(*) as count
             FROM suggestion_logs sl
@@ -322,12 +330,11 @@ class SuggestionService:
             AND (:uid IS NULL OR sl.user_id = CAST(:uid AS uuid))
             GROUP BY action_type
         """
-        ad_rows = session.execute(text(action_dist_query), {"since": since, "hid": home_id, "uid": user_id}).fetchall()
-        action_dist = {row[0]: row[1] for row in ad_rows}
-        
-        # 5. Top Accepted Patterns
+        action_rows = session.execute(text(action_dist_query), {"since": since, "hid": home_id, "uid": user_id}).fetchall()
+        action_dist = {row[0]: row[1] for row in action_rows}
+
         top_patterns_query = """
-            SELECT 
+            SELECT
                 up.pattern_type::text,
                 COUNT(sl.id) as sent,
                 COUNT(sl.id) FILTER (WHERE sl.was_accepted = true) as accepted
@@ -340,21 +347,22 @@ class SuggestionService:
             ORDER BY accepted DESC, sent DESC
             LIMIT 5
         """
-        tp_rows = session.execute(text(top_patterns_query), {"since": since, "hid": home_id, "uid": user_id}).fetchall()
+        pattern_rows = session.execute(text(top_patterns_query), {"since": since, "hid": home_id, "uid": user_id}).fetchall()
         top_patterns = []
-        for r in tp_rows:
-            sent = r[1]
-            acc = r[2]
-            top_patterns.append({
-                "pattern_type": r[0],
-                "sent": sent,
-                "accepted": acc,
-                "accept_rate": (acc / sent * 100) if sent > 0 else 0.0
-            })
+        for row in pattern_rows:
+            sent = row[1]
+            accepted_count = row[2]
+            top_patterns.append(
+                {
+                    "pattern_type": row[0],
+                    "sent": sent,
+                    "accepted": accepted_count,
+                    "accept_rate": (accepted_count / sent * 100) if sent > 0 else 0.0,
+                }
+            )
 
-        # 6. Daily Trend
         trend_query = """
-            SELECT 
+            SELECT
                 TO_CHAR(created_at AT TIME ZONE 'Asia/Ho_Chi_Minh', 'YYYY-MM-DD') as date,
                 COUNT(*) as count
             FROM suggestion_logs sl
@@ -366,11 +374,10 @@ class SuggestionService:
             ORDER BY date
         """
         trend_rows = session.execute(text(trend_query), {"since": since, "hid": home_id, "uid": user_id}).fetchall()
-        daily_trend = [{"date": r[0], "count": r[1]} for r in trend_rows]
+        daily_trend = [{"date": row[0], "count": row[1]} for row in trend_rows]
 
-        # 7. Top Rejection Reasons
         rejection_reasons_query = """
-            SELECT 
+            SELECT
                 feedback_reason,
                 COUNT(*) as count
             FROM suggestion_feedback_logs sfl
@@ -384,8 +391,8 @@ class SuggestionService:
             ORDER BY count DESC
             LIMIT 5
         """
-        rr_rows = session.execute(text(rejection_reasons_query), {"since": since, "hid": home_id, "uid": user_id}).fetchall()
-        rejection_reasons = [{"reason": r[0] or "No reason provided", "count": r[1]} for r in rr_rows]
+        rejection_rows = session.execute(text(rejection_reasons_query), {"since": since, "hid": home_id, "uid": user_id}).fetchall()
+        rejection_reasons = [{"reason": row[0] or "No reason provided", "count": row[1]} for row in rejection_rows]
 
         return {
             "sent_count": sent_count,
@@ -393,7 +400,7 @@ class SuggestionService:
                 "accepted": accepted,
                 "rejected": rejected,
                 "ignored": ignored,
-                "total_feedback": total_feedback
+                "total_feedback": total_feedback,
             },
             "effective_accept_rate": round(effective_accept_rate, 1),
             "rejection_rate": round(rejection_rate, 1),
@@ -404,9 +411,9 @@ class SuggestionService:
             "action_type_dist": {
                 "SCHEDULE": action_dist.get("SCHEDULE", 0),
                 "ALERT": action_dist.get("ALERT", 0),
-                "AUTOMATION": action_dist.get("AUTOMATION", 0)
+                "AUTOMATION": action_dist.get("AUTOMATION", 0),
             },
             "top_accepted_patterns": top_patterns,
             "daily_trend": daily_trend,
-            "top_rejection_reasons": rejection_reasons
+            "top_rejection_reasons": rejection_reasons,
         }

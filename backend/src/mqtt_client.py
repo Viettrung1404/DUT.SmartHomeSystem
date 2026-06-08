@@ -9,6 +9,7 @@ Topic hierarchy:
   - home/{home_id}/face        (subscribe) - face images from Raspberry Pi
   - smarthome/{home_id}/status (subscribe) - legacy gateway status
   - smarthome/{home_id}/sensors (subscribe) - legacy gateway sensors
+    - home/{home_id}/face        (subscribe) - face images from Raspberry Pi
   - device/{device_id}/command (publish)   - commands to Raspberry Pi
   - smarthome/{home_id}/commands (publish) - legacy Raspberry Pi commands
 """
@@ -22,6 +23,7 @@ import paho.mqtt.client as mqtt
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
+from src.apis.face.service import enroll_face, upload_face_image, verify_face_image_for_home
 from src.apis.face.service import enroll_face, upload_face_image, verify_face_image_for_home
 from src.config.env import (
     MQTT_BROKER_HOST,
@@ -90,6 +92,8 @@ def _on_connect(client, userdata, flags, rc):
         "MQTT subscribed to device/+/status, device/+/energy, home/+/face, "
         "smarthome/+/status and smarthome/+/sensors"
     )
+    client.subscribe("home/+/face")
+    logging.info("MQTT subscribed to device/+/status, device/+/energy and home/+/face")
 
 
 def _on_message(client, userdata, msg):
@@ -237,6 +241,14 @@ def _broadcast_device_state(home_id: str, device_id: str, online: bool, metadata
             ),
             _event_loop,
         )
+    scope, scope_id, message_type = parts
+
+    if message_type == 'status':
+        _handle_device_status(scope_id, payload)
+    elif message_type == 'energy':
+        _handle_energy_data(scope_id, payload)
+    elif message_type == 'face':
+        _handle_face_image(scope_id, payload)
 
 
 def _handle_device_status(device_id_str: str, payload: dict):
@@ -417,6 +429,59 @@ def _handle_face_image(home_id: str, payload: dict):
             return
 
         verified, match_id, confidence, reason = verify_face_image_for_home(home_id, image_base64)
+        confidence_percent = round(confidence * 100, 1) if confidence is not None else None
+        log_msg = f"MQTT face verify from {home_id}: verified={verified}"
+        if verified:
+            log_msg += f" match_id={match_id} match_percent={confidence_percent}%"
+        else:
+            log_msg += f" match_percent={confidence_percent}% reason={reason}"
+        logging.info(log_msg)
+        if verified and door_device_id:
+            publish_device_command(door_device_id, "open", None)
+        elif verified:
+            _publish_legacy_home_command(get_mqtt_client(), home_id, "door open")
+    except Exception as e:
+        logging.error(f"MQTT face handler error: {e}")
+
+
+def _handle_face_image(home_id: str, payload: dict):
+    """Process face image payload from a device."""
+    if not isinstance(payload, dict):
+        logging.warning("MQTT face handler received non-object payload")
+        return
+
+    image_base64 = payload.get("image_base64")
+    if not image_base64:
+        logging.warning("MQTT face handler missing image_base64 for home %s", home_id)
+        return
+
+    action = str(payload.get("action", "verify")).strip().lower()
+    door_device_id = str(payload.get("door_device_id") or "").strip()
+
+    try:
+        if action == "upload":
+            saved, reason = upload_face_image(home_id, image_base64)
+            logging.info(
+                "MQTT face upload from %s saved=%s reason=%s",
+                home_id,
+                saved,
+                reason,
+            )
+            return
+
+        if action == "enroll":
+            person_id = str(payload.get("person_id") or home_id)
+            saved, image_path, reason = enroll_face(home_id, person_id, image_base64)
+            logging.info(
+                "MQTT face enroll from %s saved=%s image_path=%s reason=%s",
+                home_id,
+                saved,
+                image_path,
+                reason,
+            )
+            return
+
+        verified, match_id, confidence, reason = verify_face_image_for_home(home_id, image_base64)
         logging.info(
             "MQTT face verify from %s verified=%s match_id=%s confidence=%s reason=%s",
             home_id,
@@ -427,8 +492,6 @@ def _handle_face_image(home_id: str, payload: dict):
         )
         if verified and door_device_id:
             publish_device_command(door_device_id, "open", None)
-        elif verified:
-            _publish_legacy_home_command(get_mqtt_client(), home_id, "door open")
     except Exception as e:
         logging.error(f"MQTT face handler error: {e}")
 

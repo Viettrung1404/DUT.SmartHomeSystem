@@ -1541,6 +1541,10 @@ def face_send_loop(client):
         log("face_send_loop: MQTT unavailable; face upload disabled.")
         return
 
+    if client is None:
+        log("face_send_loop: MQTT unavailable; face upload disabled.")
+        return
+
     while not stop_event.is_set():
         try:
             image_bytes = face_queue.get(timeout=0.5)
