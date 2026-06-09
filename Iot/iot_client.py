@@ -103,11 +103,11 @@ FAN_IN2_PIN = int(os.getenv("FAN_IN2_PIN", "6"))
 FAN_IN3_PIN = int(os.getenv("FAN_IN3_PIN", "13"))
 FAN_IN4_PIN = int(os.getenv("FAN_IN4_PIN", "19"))
 DOOR_PIN = int(os.getenv("DOOR_PIN", "17"))
-DOOR_OPEN_SECONDS = float(os.getenv("DOOR_OPEN_SECONDS", "3"))
 DOOR_OPEN_ANGLE = float(os.getenv("DOOR_OPEN_ANGLE", "130"))
 DOOR_CLOSE_ANGLE = float(os.getenv("DOOR_CLOSE_ANGLE", "0"))
 DOOR_SERVO_HOLD_SECONDS = float(os.getenv("DOOR_SERVO_HOLD_SECONDS", "1.2"))
 DOOR_SERVO_RELEASE_AFTER_MOVE = os.getenv("DOOR_SERVO_RELEASE_AFTER_MOVE", "1").strip().lower() in {"1", "true", "yes", "on"}
+DOOR_OPEN_REPEAT_SUPPRESS_SECONDS = float(os.getenv("DOOR_OPEN_REPEAT_SUPPRESS_SECONDS", "30"))
 SERVO_MIN_DUTY = float(os.getenv("SERVO_MIN_DUTY", "2.5"))
 SERVO_MAX_DUTY = float(os.getenv("SERVO_MAX_DUTY", "12.5"))
 SERVO_FREQUENCY = float(os.getenv("SERVO_FREQUENCY", "50"))
@@ -431,6 +431,7 @@ stop_event = threading.Event()
 face_queue = queue.Queue(maxsize=2)
 last_verify_ts = 0.0
 door_lock = threading.Lock()
+last_door_open_ts = 0.0
 door_pwm = None
 fan_khach_pwm = None
 fan_ngu_pwm = None
@@ -1124,32 +1125,34 @@ def apply_command(command):
 
 
 def _open_door_async():
+    global last_door_open_ts
+
     if GPIO is None:
+        now = time.monotonic()
+        if state["door"] == "open" and now - last_door_open_ts < DOOR_OPEN_REPEAT_SUPPRESS_SECONDS:
+            log("door_open: ignored duplicate open command")
+            return
+        last_door_open_ts = now
         state["door"] = "open"
         _log_door_state_change("open")
-        log("door_open: simulation {} deg (will auto-close after {} seconds)".format(
-            DOOR_OPEN_ANGLE,
-            DOOR_OPEN_SECONDS
-        ))
-        time.sleep(DOOR_OPEN_SECONDS)
-        state["door"] = "closed"
-        _log_door_state_change("closed")
+        log("door_open: simulation {} deg".format(DOOR_OPEN_ANGLE))
         return
 
     def _rotate() -> None:
+        global last_door_open_ts
+
         with door_lock:
+            now = time.monotonic()
+            if state["door"] == "open" and now - last_door_open_ts < DOOR_OPEN_REPEAT_SUPPRESS_SECONDS:
+                log("door_open: ignored duplicate open command")
+                return
+            last_door_open_ts = now
             state["door"] = "open"
             _log_door_state_change("open")
-            log("door_open: {} deg (face verification success - will auto-close after {} seconds)".format(
-                DOOR_OPEN_ANGLE,
-                DOOR_OPEN_SECONDS
-            ))
+            log("door_open: {} deg".format(DOOR_OPEN_ANGLE))
             set_door_angle(DOOR_OPEN_ANGLE)
-            time.sleep(DOOR_OPEN_SECONDS)
-            close_door()
 
     threading.Thread(target=_rotate, daemon=True).start()
-
 
 def on_connect(client, userdata, flags, rc, properties=None):
     if rc == 0:
@@ -1537,10 +1540,6 @@ def publish_face_image(client, action, image_bytes, person_id=None):
 def face_send_loop(client):
     global last_verify_ts
     log("face_send_loop start mode={}".format(FACE_MODE))
-    if client is None:
-        log("face_send_loop: MQTT unavailable; face upload disabled.")
-        return
-
     if client is None:
         log("face_send_loop: MQTT unavailable; face upload disabled.")
         return

@@ -14,12 +14,12 @@ email-validator
 paho-mqtt
 websockets
 apscheduler
-numpy
+numpy==1.26.4
 scikit-learn
 pandas
 httpx
 
-# Face recognition extras (merged from requirements-face.txt)
-insightface
-onnxruntime
+
+onnxruntime==1.18.0
+insightface==0.7.3
 opencv-python-headless
