@@ -1,23 +1,52 @@
 """
-Automation engine — checks time-based conditions on a schedule
-and executes device actions via MQTT.
+Automation engine checks time-based conditions and executes device actions via MQTT.
 """
 
+import json
 import logging
 from datetime import datetime, timezone
+
 from apscheduler.schedulers.background import BackgroundScheduler
-from sqlalchemy.orm import Session
 
 scheduler = BackgroundScheduler()
 _db_session_factory = None
+
+
+def _condition_matches(condition, current_time: str, current_weekday: int) -> bool:
+    if condition.condition_type == "time":
+        return condition.value == current_time
+
+    if condition.condition_type == "weekday_time":
+        try:
+            payload = json.loads(condition.value)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            logging.warning(
+                "Invalid weekday_time payload on automation condition %s",
+                condition.id,
+            )
+            return False
+
+        expected_time = str(payload.get("time", "")).strip()
+        days_of_week = payload.get("days_of_week") or []
+        try:
+            normalized_days = {int(day) for day in days_of_week}
+        except (TypeError, ValueError):
+            logging.warning(
+                "Invalid days_of_week payload on automation condition %s",
+                condition.id,
+            )
+            return False
+
+        return expected_time == current_time and current_weekday in normalized_days
+
+    return False
 
 
 def init_automation_engine(session_factory):
     global _db_session_factory
     _db_session_factory = session_factory
 
-    # Check time-based automations every minute
-    scheduler.add_job(check_time_automations, 'interval', minutes=1, id='time_check')
+    scheduler.add_job(check_time_automations, "interval", minutes=1, id="time_check")
     scheduler.start()
     logging.info("Automation engine started")
 
@@ -27,27 +56,26 @@ def check_time_automations():
     if not _db_session_factory:
         return
 
-    from src.entities.models import Automation, AutomationCondition, AutomationAction, Device, DeviceState
+    from src.entities.models import Automation, Device, DeviceState
     from src.mqtt_client import publish_device_command
 
     db = _db_session_factory()
     try:
         now = datetime.now(timezone.utc)
         current_time = now.strftime("%H:%M")
+        current_weekday = (now.weekday() + 1) % 7
 
         automations = db.query(Automation).filter(Automation.enabled == True).all()
 
         for automation in automations:
             conditions_met = True
             for condition in automation.conditions:
-                if condition.condition_type == 'time':
-                    if condition.value != current_time:
-                        conditions_met = False
-                        break
-                # Other condition types can be added here
+                if not _condition_matches(condition, current_time, current_weekday):
+                    conditions_met = False
+                    break
 
             if conditions_met and automation.conditions:
-                logging.info(f"Automation triggered: {automation.name}")
+                logging.info("Automation triggered: %s", automation.name)
                 for action in automation.actions:
                     try:
                         if action.device_id:
@@ -55,48 +83,56 @@ def check_time_automations():
                             if device and device.state and device.state.is_online:
                                 command = action.action
                                 value = action.value
-                                if command == 'toggle':
+                                if command == "toggle":
                                     is_on = False
                                     if isinstance(value, bool):
                                         is_on = value
                                     elif isinstance(value, str):
-                                        is_on = value.strip().lower() in {'on', 'true', '1'}
+                                        is_on = value.strip().lower() in {"on", "true", "1"}
 
                                     device_type = str(device.type).lower()
-                                    if device_type in {'lock', 'door', 'curtain'}:
-                                        command = 'open' if is_on else 'close'
+                                    if device_type in {"lock", "door", "curtain"}:
+                                        command = "open" if is_on else "close"
                                         value = None
                                     else:
-                                        command = 'turn_on' if is_on else 'turn_off'
+                                        command = "turn_on" if is_on else "turn_off"
                                         value = None
 
                                 publish_device_command(str(device.id), command, value)
 
-                                # Update device in DB
                                 if not device.state:
-                                    device.state = DeviceState(device_id=device.id, state={}, is_online=True)
-                                
+                                    device.state = DeviceState(
+                                        device_id=device.id,
+                                        state={},
+                                        is_online=True,
+                                    )
+
                                 state_dict = dict(device.state.state) if device.state.state else {}
-                                if action.action == 'toggle':
-                                    state_dict['power'] = 'ON' if is_on else 'OFF'
-                                elif action.action in ('set_brightness', 'set_temperature', 'set_mode'):
+                                if action.action == "toggle":
+                                    state_dict["power"] = "ON" if is_on else "OFF"
+                                elif action.action in (
+                                    "set_brightness",
+                                    "set_temperature",
+                                    "set_mode",
+                                ):
                                     key_map = {
-                                        'set_brightness': 'brightness',
-                                        'set_temperature': 'targetTemp',
-                                        'set_mode': 'mode',
+                                        "set_brightness": "brightness",
+                                        "set_temperature": "targetTemp",
+                                        "set_mode": "mode",
                                     }
                                     state_dict[key_map[action.action]] = action.value
-                                
+
                                 device.state.state = state_dict
                                 from sqlalchemy.orm.attributes import flag_modified
+
                                 flag_modified(device.state, "state")
                                 device.state.last_updated = now
                     except Exception as e:
-                        logging.error(f"Automation action failed: {e}")
+                        logging.error("Automation action failed: %s", e)
 
                 db.commit()
     except Exception as e:
-        logging.error(f"Automation check error: {e}")
+        logging.error("Automation check error: %s", e)
     finally:
         db.close()
 

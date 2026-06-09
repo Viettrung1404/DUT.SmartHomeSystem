@@ -1,6 +1,13 @@
-from src.entities.models import Automation, AutomationCondition, AutomationAction, HomeUser
-
+import json
 from uuid import UUID, uuid4
+
+from src.entities.models import (
+    Automation,
+    AutomationAction,
+    AutomationCondition,
+    Device,
+    HomeUser,
+)
 from sqlalchemy.orm import Session
 
 from src.exceptions import AutomationNotFoundError, ForbiddenError
@@ -39,6 +46,52 @@ def create_automation(db: Session, user_id: UUID, data: models.AutomationCreate)
     db.commit()
     db.refresh(automation)
     return automation
+
+
+def create_schedule_automation_from_suggestion(
+    db: Session,
+    user_id: UUID,
+    *,
+    device_id: str,
+    automation_name: str,
+    time_value: str,
+    days_of_week: list[int] | None = None,
+    power_state: str | None = None,
+) -> Automation:
+    device_uuid = UUID(device_id)
+    device = db.query(Device).filter(Device.id == device_uuid).first()
+    if not device or not device.room or not device.room.home_id:
+        raise ValueError("Device referenced by suggestion is invalid")
+
+    normalized_days = sorted({int(day) for day in (days_of_week or []) if 0 <= int(day) <= 6})
+    condition_type = "weekday_time" if normalized_days else "time"
+    condition_value = (
+        json.dumps({"time": time_value, "days_of_week": normalized_days})
+        if normalized_days
+        else time_value
+    )
+
+    normalized_power = (power_state or "ON").strip().upper()
+    action_value = "true" if normalized_power in {"ON", "TRUE", "1"} else "false"
+
+    payload = models.AutomationCreate(
+        home_id=str(device.room.home_id),
+        name=automation_name,
+        conditions=[
+            models.ConditionCreate(
+                condition_type=condition_type,
+                value=condition_value,
+            )
+        ],
+        actions=[
+            models.ActionCreate(
+                device_id=str(device_uuid),
+                action="toggle",
+                value=action_value,
+            )
+        ],
+    )
+    return create_automation(db, user_id, payload)
 
 def get_automations(db: Session, home_id: UUID, user_id: UUID) -> list[Automation]:
     _check_home_access(db, home_id, user_id)
