@@ -3,8 +3,8 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install Expo CLI globally
-RUN npm install -g expo-cli
+# Install Expo CLI and tunnel helper globally
+RUN npm install -g expo-cli @expo/ngrok@^4.1.0
 
 # Copy package files
 COPY mobile/package.json mobile/package-lock.json* ./

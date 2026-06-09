@@ -23,7 +23,8 @@ def _decode_image(image_base64: str) -> bytes:
 
 
 def _safe_person_id(person_id: str) -> str:
-    safe = "".join(ch for ch in person_id if ch.isalnum() or ch in "-_")
+    safe = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in person_id.strip())
+    safe = "_".join(part for part in safe.split("_") if part)
     return safe
 
 
@@ -37,6 +38,13 @@ def _home_gallery_dir(home_id: str) -> str:
     if not safe_home_id:
         raise HTTPException(status_code=400, detail="home_id is invalid")
     return os.path.join(FACE_GALLERY_DIR, safe_home_id)
+
+
+def _person_gallery_dir(home_id: str, person_id: str) -> str:
+    safe_person_id = _safe_person_id(person_id)
+    if not safe_person_id:
+        raise HTTPException(status_code=400, detail="person_id is invalid")
+    return os.path.join(_home_gallery_dir(home_id), safe_person_id)
 
 
 def _save_last_image(image_bytes: bytes) -> None:
@@ -69,18 +77,36 @@ def _clear_home_gallery(home_id: str) -> int:
     return deleted_count
 
 
+def _clear_person_gallery(home_id: str, person_id: str) -> int:
+    person_dir = _person_gallery_dir(home_id, person_id)
+    if not os.path.isdir(person_dir):
+        return 0
+
+    deleted_count = 0
+    for root, _, files in os.walk(person_dir):
+        for file_name in files:
+            file_path = os.path.join(root, file_name)
+            try:
+                os.remove(file_path)
+                deleted_count += 1
+            except FileNotFoundError:
+                continue
+
+    return deleted_count
+
+
 def enroll_face(home_id: str, person_id: str, image_base64: str) -> Tuple[bool, str | None, str | None]:
     safe_person_id = _safe_person_id(person_id)
     if not safe_person_id:
         return False, None, "person_id is invalid"
 
-    home_dir = _home_gallery_dir(home_id)
-    os.makedirs(home_dir, exist_ok=True)
+    person_dir = _person_gallery_dir(home_id, safe_person_id)
+    os.makedirs(person_dir, exist_ok=True)
 
     image_bytes = _decode_image(image_base64)
     _save_last_image(image_bytes)
     filename = "{}_face_{}.jpg".format(safe_person_id, int.from_bytes(os.urandom(4), "big"))
-    image_path = os.path.join(home_dir, filename)
+    image_path = os.path.join(person_dir, filename)
     with open(image_path, "wb") as image_file:
         image_file.write(image_bytes)
     embedding_reason = None
@@ -99,11 +125,11 @@ def replace_face_gallery(home_id: str, person_id: str, images_base64: list[str])
         return 0, 0, [], "exactly 5 images are required"
 
     decoded_images = [_decode_image(image_base64) for image_base64 in images_base64]
-    home_dir = _home_gallery_dir(home_id)
-    os.makedirs(home_dir, exist_ok=True)
+    person_dir = _person_gallery_dir(home_id, safe_person_id)
+    os.makedirs(person_dir, exist_ok=True)
 
-    deleted_count = _clear_home_gallery(home_id)
-    os.makedirs(home_dir, exist_ok=True)
+    deleted_count = _clear_person_gallery(home_id, safe_person_id)
+    os.makedirs(person_dir, exist_ok=True)
 
     saved_paths: list[str] = []
     last_reason = None
@@ -114,7 +140,7 @@ def replace_face_gallery(home_id: str, person_id: str, images_base64: list[str])
             index,
             int.from_bytes(os.urandom(4), "big"),
         )
-        image_path = os.path.join(home_dir, filename)
+        image_path = os.path.join(person_dir, filename)
         with open(image_path, "wb") as image_file:
             image_file.write(image_bytes)
         saved_paths.append(image_path)
