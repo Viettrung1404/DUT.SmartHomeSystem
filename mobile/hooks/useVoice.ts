@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { PermissionsAndroid, Platform } from 'react-native';
+import { NativeModules, PermissionsAndroid, Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as Speech from 'expo-speech';
 
@@ -27,6 +27,18 @@ type VoiceModule = {
 
 let cachedVoice: VoiceModule | null | undefined;
 
+function isUsableVoiceModule(value: unknown): value is VoiceModule {
+  if (!value || typeof value !== 'object') return false;
+
+  const candidate = value as Partial<VoiceModule>;
+  return (
+    typeof candidate.start === 'function' &&
+    typeof candidate.stop === 'function' &&
+    typeof candidate.destroy === 'function' &&
+    typeof candidate.removeAllListeners === 'function'
+  );
+}
+
 function getVoiceModule(): VoiceModule | null {
   if (Platform.OS === 'web') return null;
 
@@ -38,7 +50,23 @@ function getVoiceModule(): VoiceModule | null {
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    cachedVoice = require('@react-native-voice/voice').default as VoiceModule;
+    const voicePackage = require('@react-native-voice/voice');
+    const candidate = voicePackage?.default ?? voicePackage;
+    const nativeVoice = NativeModules?.Voice;
+
+    if (!nativeVoice || typeof nativeVoice.startSpeech !== 'function') {
+      console.warn('Voice native module is missing from the installed app build.');
+      cachedVoice = null;
+      return cachedVoice;
+    }
+
+    if (!isUsableVoiceModule(candidate)) {
+      console.warn('Voice JS wrapper is available but has an unexpected shape.');
+      cachedVoice = null;
+      return cachedVoice;
+    }
+
+    cachedVoice = candidate;
   } catch (error) {
     console.warn('Voice native module is not available:', error);
     cachedVoice = null;
@@ -143,7 +171,7 @@ export function useVoice({ onTranscriptReceived, locale = 'vi-VN' }: UseVoicePro
 
     const Voice = getVoiceModule();
     if (!Voice) {
-      setError('Voice can Expo Dev Client/native build. Expo Go chi ho tro chat bang chu.');
+      setError('Ban dev build dang cai tren dien thoai chua nhung voice native module. Hay cai lai dev build moi, khong dung Expo Go.');
       return;
     }
 

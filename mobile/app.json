@@ -27,7 +27,8 @@
       "permissions": [
         "RECORD_AUDIO",
         "android.permission.RECORD_AUDIO"
-      ]
+      ],
+      "package": "com.baronger.mobile"
     },
     "web": {
       "output": "static",
@@ -63,8 +64,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "953e4665-83f8-4139-98e0-2554bdc01d6f"
+        "projectId": "456f803e-49d8-47b7-bd14-6a51e7bb598a"
       }
-    }
+    },
+    "owner": "viettrung1404"
   }
 }
