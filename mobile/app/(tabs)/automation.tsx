@@ -10,6 +10,33 @@ import { Typography } from '@/constants/typography';
 import { Feather } from '@expo/vector-icons';
 import { automationsAPI, homesAPI } from '@/services/api';
 
+const weekdayLabels: Record<number, string> = {
+    0: 'CN',
+    1: 'T2',
+    2: 'T3',
+    3: 'T4',
+    4: 'T5',
+    5: 'T6',
+    6: 'T7',
+};
+
+function formatCondition(condition: { condition_type: string; value: string }) {
+    if (condition.condition_type !== 'weekday_time') {
+        return `${condition.condition_type}: ${condition.value}`;
+    }
+
+    try {
+        const payload = JSON.parse(condition.value) as { time?: string; days_of_week?: number[] };
+        const days = (payload.days_of_week || [])
+            .map((day) => weekdayLabels[day])
+            .filter(Boolean)
+            .join(', ');
+        return `time: ${payload.time || '--:--'}${days ? ` (${days})` : ''}`;
+    } catch {
+        return `${condition.condition_type}: ${condition.value}`;
+    }
+}
+
 export default function AutomationScreen() {
     const { colors } = useTheme();
     const router = useRouter();
@@ -31,7 +58,7 @@ export default function AutomationScreen() {
                     id: automation.id,
                     name: automation.name,
                     isEnabled: automation.enabled,
-                    conditionSummary: automation.conditions.map((c) => `${c.condition_type}: ${c.value}`).join(', ') || 'Không có điều kiện',
+                    conditionSummary: automation.conditions.map(formatCondition).join(', ') || 'Không có điều kiện',
                     actionSummary: automation.actions.map((a) => `${a.action}${a.value ? ` (${a.value})` : ''}`).join(', ') || 'Không có hành động',
                     icon: 'zap',
                     lastRun: undefined,

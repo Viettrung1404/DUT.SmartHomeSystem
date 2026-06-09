@@ -52,6 +52,16 @@ const conditions: StepItem[] = [
     },
 ];
 
+const weekdayOptions = [
+    { value: 1, label: 'T2' },
+    { value: 2, label: 'T3' },
+    { value: 3, label: 'T4' },
+    { value: 4, label: 'T5' },
+    { value: 5, label: 'T6' },
+    { value: 6, label: 'T7' },
+    { value: 0, label: 'CN' },
+];
+
 const actions: StepItem[] = [
     { type: 'toggle', label: 'Bật/Tắt thiết bị', icon: 'power', available: true },
     {
@@ -129,6 +139,7 @@ export default function CreateAutomationScreen() {
     const [selectedCondition, setSelectedCondition] = useState<StepItem | null>(null);
     const [selectedAction, setSelectedAction] = useState<StepItem | null>(null);
     const [timeValue, setTimeValue] = useState('22:00');
+    const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([]);
     const [automationName, setAutomationName] = useState('');
     const [actionValue, setActionValue] = useState<'true' | 'false'>('true');
     const [homeId, setHomeId] = useState<string | null>(null);
@@ -151,6 +162,18 @@ export default function CreateAutomationScreen() {
         !!selectedDeviceId &&
         isValidTime(timeValue) &&
         automationName.trim().length > 0;
+    const selectedWeekdayLabels = weekdayOptions
+        .filter((option) => selectedWeekdays.includes(option.value))
+        .map((option) => option.label)
+        .join(', ');
+
+    const toggleWeekday = (day: number) => {
+        setSelectedWeekdays((current) =>
+            current.includes(day)
+                ? current.filter((value) => value !== day)
+                : [...current, day].sort((a, b) => a - b),
+        );
+    };
 
     useEffect(() => {
         let isMounted = true;
@@ -219,10 +242,21 @@ export default function CreateAutomationScreen() {
 
         try {
             setSaving(true);
+            const condition =
+                selectedWeekdays.length > 0
+                    ? {
+                        condition_type: 'weekday_time',
+                        value: JSON.stringify({
+                            time: timeValue.trim(),
+                            days_of_week: selectedWeekdays,
+                        }),
+                    }
+                    : { condition_type: 'time', value: timeValue.trim() };
+
             await automationsAPI.create({
                 home_id: homeId,
                 name: automationName.trim(),
-                conditions: [{ condition_type: 'time', value: timeValue.trim() }],
+                conditions: [condition],
                 actions: [{ device_id: selectedDeviceId, action: 'toggle', value: actionValue }],
             });
             Alert.alert('Đã tạo tự động hóa', 'Kịch bản mới đã được lưu và sẽ xuất hiện ở danh sách.');
@@ -364,6 +398,48 @@ export default function CreateAutomationScreen() {
                                 />
                             </>
                         )}
+
+                                {step === 0 && selectedCondition?.type === 'time' && (
+                                    <>
+                                        <Text style={[Typography.h3, { color: colors.text, marginTop: Spacing.lg, marginBottom: Spacing.sm }]}>
+                                            Ngay trong tuan
+                                        </Text>
+                                        <Text style={[Typography.caption, { color: colors.textSecondary, marginBottom: Spacing.sm }]}>
+                                            Khong chon ngay nao thi kich ban se chay moi ngay.
+                                        </Text>
+                                        <Text style={[Typography.h3, { color: colors.text, display: 'none' }]}>
+                                            NgÃ y trong tuáº§n
+                                        </Text>
+                                        <Text style={[Typography.caption, { color: colors.textSecondary, display: 'none' }]}>
+                                            KhÃ´ng chá»n ngÃ y nÃ o thÃ¬ ká»‹ch báº£n sáº½ cháº¡y má»—i ngÃ y.
+                                        </Text>
+                                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs }}>
+                                            {weekdayOptions.map((option) => {
+                                                const isSelected = selectedWeekdays.includes(option.value);
+                                                return (
+                                                    <Pressable
+                                                        key={option.value}
+                                                        onPress={() => toggleWeekday(option.value)}
+                                                        style={{
+                                                            minWidth: 44,
+                                                            paddingVertical: Spacing.sm,
+                                                            paddingHorizontal: Spacing.md,
+                                                            borderRadius: BorderRadius.md,
+                                                            backgroundColor: isSelected ? colors.primaryLight : colors.surface,
+                                                            borderWidth: 1.5,
+                                                            borderColor: isSelected ? colors.primary : colors.border,
+                                                            alignItems: 'center',
+                                                        }}
+                                                    >
+                                                        <Text style={[Typography.captionMedium, { color: isSelected ? colors.primary : colors.textSecondary }]}>
+                                                            {option.label}
+                                                        </Text>
+                                                    </Pressable>
+                                                );
+                                            })}
+                                        </View>
+                                    </>
+                                )}
 
                         {step === 1 && (
                             <>
@@ -518,7 +594,7 @@ export default function CreateAutomationScreen() {
                                         <View>
                                             <Text style={[Typography.body, { color: colors.text }]}>{selectedCondition?.label}</Text>
                                             <Text style={[Typography.caption, { color: colors.textSecondary, marginTop: Spacing.xs }]}>
-                                                Lúc {timeValue}
+                                                Lúc {timeValue}{selectedWeekdayLabels ? ` - ${selectedWeekdayLabels}` : ' - mỗi ngày'}
                                             </Text>
                                         </View>
                                     </View>
