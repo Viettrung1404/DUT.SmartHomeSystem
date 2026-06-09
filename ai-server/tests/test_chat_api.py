@@ -146,6 +146,64 @@ def test_chat_device_command_returns_command(monkeypatch):
     assert body["device_command"]["command"] == "turn_off"
 
 
+def test_chat_light_command_locks_parser_hint_when_llm_suggests_ac(monkeypatch):
+    from app.agent import agent as agent_module
+    from app.agent.tool_planner import AgentDecision, PlannedToolCall
+    from app.schemas.tool_schema import ToolResult
+
+    tool_hints = []
+
+    monkeypatch.setattr(agent_module, "SessionLocal", lambda: DummySession())
+    monkeypatch.setattr(
+        agent_module,
+        "decide_next_tool_with_llm",
+        lambda *args, **kwargs: AgentDecision(
+            action="call_tool",
+            intent="DEVICE_COMMAND",
+            tool_call=PlannedToolCall(
+                name="query_device_status",
+                device_hint="dieu hoa phong khach",
+                query="dieu hoa phong khach",
+            ),
+        ),
+    )
+
+    def fake_execute_tool(*args, **kwargs):
+        tool_hints.append(kwargs.get("device_hint"))
+        return ToolResult(
+            tool_name="query_device_status",
+            result_count=2,
+            items=[
+                {
+                    "id": "11111111-1111-1111-1111-111111111111",
+                    "device_slug": "dieu_hoa_lg_dual_cool",
+                    "device_name": "Dieu hoa LG Dual Cool",
+                    "device_type": "AC",
+                    "room_name": "Phong khach",
+                    "state": {"power": "OFF"},
+                },
+                {
+                    "id": "22222222-2222-2222-2222-222222222222",
+                    "device_slug": "den_tran_phong_khach",
+                    "device_name": "Den tran phong khach",
+                    "device_type": "LIGHT",
+                    "room_name": "Phong khach",
+                    "state": {"power": "OFF"},
+                },
+            ],
+        )
+
+    monkeypatch.setattr(agent_module, "execute_tool", fake_execute_tool)
+
+    response = TestClient(app).post("/v1/chat", json=_payload("Bat den phong khach"))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert tool_hints == ["den phong khach"]
+    assert body["device_command"]["device_id"] == "22222222-2222-2222-2222-222222222222"
+    assert body["device_command"]["device_type"] == "LIGHT"
+
+
 def test_chat_short_command_uses_last_device_from_memory(monkeypatch):
     from app.agent import agent as agent_module
     from app.agent.tool_planner import AgentDecision, PlannedToolCall
@@ -956,3 +1014,60 @@ def test_missing_message_returns_422():
     payload.pop("message")
     response = TestClient(app).post("/v1/chat", json=payload)
     assert response.status_code == 422
+
+
+def test_chat_target_count_returns_multiple_commands(monkeypatch):
+    from app.agent import agent as agent_module
+    from app.schemas.tool_schema import ToolResult
+
+    monkeypatch.setattr(agent_module, "SessionLocal", lambda: DummySession())
+    monkeypatch.setattr(agent_module, "decide_next_tool_with_llm", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        agent_module,
+        "execute_tool",
+        lambda *args, **kwargs: ToolResult(
+            tool_name="query_device_status",
+            result_count=3,
+            items=[
+                {
+                    "id": "11111111-1111-1111-1111-111111111111",
+                    "device_slug": "quat_tran_assa",
+                    "device_name": "Quat tran ASSA",
+                    "device_type": "FAN",
+                    "room_name": "Phong khach",
+                    "is_online": True,
+                    "state": {"power": "OFF"},
+                },
+                {
+                    "id": "22222222-2222-2222-2222-222222222222",
+                    "device_slug": "quat_thong_gio",
+                    "device_name": "Quat thong gio",
+                    "device_type": "FAN",
+                    "room_name": "Nha tam",
+                    "is_online": True,
+                    "state": {"power": "OFF"},
+                },
+                {
+                    "id": "33333333-3333-3333-3333-333333333333",
+                    "device_slug": "quat_ung_xiaomi",
+                    "device_name": "Quat dung Xiaomi",
+                    "device_type": "FAN",
+                    "room_name": "Phong ngu",
+                    "is_online": True,
+                    "state": {"power": "OFF"},
+                },
+            ],
+        ),
+    )
+
+    response = TestClient(app).post("/v1/chat", json=_payload("Bat 2 cai quat"))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"] == "DEVICE_COMMAND"
+    assert body["device_command"] is None
+    assert len(body["device_commands"]) == 2
+    assert [command["device_id"] for command in body["device_commands"]] == [
+        "11111111-1111-1111-1111-111111111111",
+        "22222222-2222-2222-2222-222222222222",
+    ]

@@ -252,6 +252,8 @@ def search_smart_home_records(
             LEFT JOIN rooms r ON r.id = d.room_id
             LEFT JOIN device_states ds ON ds.device_id = d.id
             WHERE r.home_id = CAST(:home_id AS uuid)
+              AND COALESCE(r.is_active, true) = true
+              AND lower(coalesce(d.config->>'archived', 'false')) <> 'true'
               AND {_query_filter_sql("coalesce(d.name, '') || ' ' || coalesce(d.slug, '') || ' ' || coalesce(d.type::text, '') || ' ' || coalesce(r.name, '')")}
             ORDER BY d.name
             LIMIT :limit
@@ -474,6 +476,8 @@ def query_device_status(db: Session, home_id: str, device_hint: str | None) -> T
         LEFT JOIN rooms r ON r.id = d.room_id
         LEFT JOIN device_states ds ON ds.device_id = d.id
         WHERE r.home_id = CAST(:home_id AS uuid)
+          AND COALESCE(r.is_active, true) = true
+          AND lower(coalesce(d.config->>'archived', 'false')) <> 'true'
         ORDER BY d.name
         LIMIT :limit
     """), {

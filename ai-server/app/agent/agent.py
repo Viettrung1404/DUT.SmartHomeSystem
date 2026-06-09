@@ -503,7 +503,7 @@ class SmartHomeAgent:
                     or (memory.last_device_slug if memory else None)
                     or (memory.last_device_name if memory else None)
                 )
-                if parsed_command_for_intent.device_hint is None and device_hint:
+                if device_hint:
                     locked_command_device_hint = device_hint
             time_range = None
 
@@ -918,26 +918,53 @@ class SmartHomeAgent:
 
             resolved_device_hint = parsed_command.device_hint or device_hint
             controllable = _candidate_devices_for_command(evidence, parsed_command)
+            if parsed_command.room_hint:
+                room_hint_norm = _normalize_text(parsed_command.room_hint)
+                controllable = [
+                    item
+                    for item in controllable
+                    if room_hint_norm
+                    in " ".join(
+                        [
+                            _normalize_text(item.get("room_name")),
+                            _normalize_text(item.get("device_name")),
+                            _normalize_text(item.get("device_slug")),
+                        ]
+                    )
+                ]
+            if parsed_command.exclude_room_hint:
+                exclude_room_hint_norm = _normalize_text(parsed_command.exclude_room_hint)
+                controllable = [
+                    item
+                    for item in controllable
+                    if exclude_room_hint_norm
+                    not in " ".join(
+                        [
+                            _normalize_text(item.get("room_name")),
+                            _normalize_text(item.get("device_name")),
+                            _normalize_text(item.get("device_slug")),
+                        ]
+                    )
+                ]
             ranked = sorted(
                 controllable,
                 key=lambda item: _score_device(item, resolved_device_hint),
                 reverse=True,
             )
-            best = next(
-                (
-                    item
-                    for item in ranked
-                    if str(item.get("id")) not in used_device_ids
-                    and _score_device(item, resolved_device_hint) > 0
-                ),
-                None,
-            )
-            if best is None:
+            limit = parsed_command.target_count if parsed_command.target_count is not None else 1
+            selected_devices = []
+            for item in ranked:
+                if len(selected_devices) >= limit:
+                    break
+                if str(item.get("id")) not in used_device_ids and _score_device(item, resolved_device_hint) > 0:
+                    selected_devices.append(item)
+            if not selected_devices:
                 unresolved_count += 1
                 continue
-            used_device_ids.add(str(best.get("id")))
-            command = _resolve_command_for_device(parsed_command.action, best)
-            resolved_commands.append((parsed_command, best, _device_command_payload(best, command)))
+            for best in selected_devices:
+                used_device_ids.add(str(best.get("id")))
+                command = _resolve_command_for_device(parsed_command.action, best)
+                resolved_commands.append((parsed_command, best, _device_command_payload(best, command)))
 
         if parsed_commands and unresolved_count == 0 and resolved_commands:
             device_commands = [item[2] for item in resolved_commands]
