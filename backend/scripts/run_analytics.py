@@ -30,7 +30,7 @@ DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:123456@localhost:5432/
 TZ     = ZoneInfo("Asia/Ho_Chi_Minh")
 
 # ─── Ngưỡng tối thiểu để chạy analytics ─────────────────────────────────────
-MIN_DAYS_RULE_BASED = 7    # Rule-based cần ít nhất 7 ngày
+MIN_DAYS_RULE_BASED = 1    # Rule-based cần ít nhất 1 ngày
 MAX_SESSION_DURATION_SECONDS = 24 * 60 * 60
 
 

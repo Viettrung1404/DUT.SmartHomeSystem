@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from src.apis.automations import service as automation_service
 from src.apis.auth.service import CurrentUser
 from src.apis.suggestions.models import (
     SuggestionAcceptRequest,
@@ -18,6 +19,13 @@ from src.apis.suggestions.service import SuggestionService
 from src.database.core import get_db
 
 router = APIRouter(prefix="/suggestions", tags=["suggestions"])
+
+
+def _build_suggestion_payload(base_payload: dict | None, action_taken: str | None) -> dict:
+    payload = dict(base_payload or {})
+    if action_taken:
+        payload["action_taken"] = action_taken
+    return payload
 
 
 def _load_suggestion_detail(db: Session, suggestion_id: int, *, user_id: str | None = None):
@@ -98,18 +106,54 @@ def accept_suggestion(
     if not updated:
         raise HTTPException(status_code=404, detail="Suggestion not found")
 
+    suggestion = _load_suggestion_detail(db, suggestion_id, user_id=str(current_user.get_uuid()))
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Suggestion not found")
+
+    suggestion_payload = dict(suggestion).get("suggestion_json") or {}
+
+    if request.was_accepted and dict(suggestion).get("action_type") == "SCHEDULE":
+        existing_automation_id = suggestion_payload.get("automation_id")
+        if not existing_automation_id:
+            schedule_payload = suggestion_payload.get("schedule_payload") or {}
+            device_id = suggestion_payload.get("device_id")
+            time_value = schedule_payload.get("time")
+            action_payload = schedule_payload.get("action_payload") or {}
+            power_state = action_payload.get("power")
+            automation_name = suggestion_payload.get("title") or "Automation from suggestion"
+
+            if device_id and time_value:
+                try:
+                    automation = automation_service.create_schedule_automation_from_suggestion(
+                        db,
+                        current_user.get_uuid(),
+                        device_id=device_id,
+                        automation_name=automation_name,
+                        time_value=str(time_value),
+                        days_of_week=schedule_payload.get("days_of_week") or [],
+                        power_state=str(power_state or "ON"),
+                    )
+                except ValueError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+                suggestion_payload["automation_id"] = str(automation.id)
+                suggestion_payload["automation_created"] = True
+                request.action_taken = request.action_taken or "AUTOMATION_CREATED"
+
     if request.action_taken:
         db.execute(
             text(
                 """
                 UPDATE suggestion_logs
-                SET suggestion_json = COALESCE(suggestion_json, '{}'::jsonb) || CAST(:payload AS jsonb)
+                SET suggestion_json = CAST(:payload AS jsonb)
                 WHERE id = :id
                 """
             ),
             {
                 "id": suggestion_id,
-                "payload": json.dumps({"action_taken": request.action_taken}),
+                "payload": json.dumps(
+                    _build_suggestion_payload(suggestion_payload, request.action_taken)
+                ),
             },
         )
         db.commit()
