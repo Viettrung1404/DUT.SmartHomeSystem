@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text } from 'react-native';
+import { Pressable, View, Text } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Card } from './ui/Card';
 import { Toggle } from './ui/Toggle';
@@ -20,9 +20,11 @@ export interface AutomationCardModel {
 interface AutomationCardProps {
     automation: AutomationCardModel;
     onToggle: (id: string, value: boolean) => void;
+    onDelete?: (automation: AutomationCardModel) => void;
+    deleting?: boolean;
 }
 
-export function AutomationCard({ automation, onToggle }: AutomationCardProps) {
+export function AutomationCard({ automation, onToggle, onDelete, deleting = false }: AutomationCardProps) {
     const { colors } = useTheme();
     const iconName = (automation.icon || 'zap') as keyof typeof Feather.glyphMap;
 
@@ -65,11 +67,33 @@ export function AutomationCard({ automation, onToggle }: AutomationCardProps) {
                     )}
                 </View>
 
-                <Toggle
-                    value={automation.isEnabled}
-                    onToggle={(val) => onToggle(automation.id, val)}
-                    size="sm"
-                />
+                <View style={{ alignItems: 'center', gap: Spacing.sm }}>
+                    <Pressable
+                        onPress={() => onDelete?.(automation)}
+                        disabled={deleting}
+                        hitSlop={8}
+                        style={({ pressed }) => ({
+                            width: 36,
+                            height: 36,
+                            borderRadius: 18,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: colors.errorLight,
+                            borderWidth: 1,
+                            borderColor: colors.error,
+                            opacity: deleting ? 0.5 : 1,
+                            transform: [{ scale: pressed ? 0.96 : 1 }],
+                        })}
+                    >
+                        <Feather name="trash-2" size={18} color={colors.error} />
+                    </Pressable>
+
+                    <Toggle
+                        value={automation.isEnabled}
+                        onToggle={(val) => onToggle(automation.id, val)}
+                        size="sm"
+                    />
+                </View>
             </View>
         </Card>
     );

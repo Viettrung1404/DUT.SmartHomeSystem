@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, FlatList } from 'react-native';
+import { Alert, Platform, View, Text, FlatList } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -41,6 +41,7 @@ export default function AutomationScreen() {
     const { colors } = useTheme();
     const router = useRouter();
     const [automations, setAutomations] = useState<AutomationCardModel[]>([]);
+    const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
 
     const loadAutomations = useCallback(async () => {
         try {
@@ -91,6 +92,51 @@ export default function AutomationScreen() {
         }
     };
 
+    const deleteAutomation = async (automation: AutomationCardModel) => {
+        setDeletingIds((current) => new Set(current).add(automation.id));
+        setAutomations((prev) => prev.filter((item) => item.id !== automation.id));
+
+        try {
+            await automationsAPI.delete(automation.id);
+        } catch (error) {
+            console.error('Failed to delete automation:', error);
+            setAutomations((prev) => [automation, ...prev]);
+            Alert.alert(
+                'Không xóa được tự động hóa',
+                error instanceof Error ? error.message : 'Vui lòng thử lại.',
+            );
+        } finally {
+            setDeletingIds((current) => {
+                const next = new Set(current);
+                next.delete(automation.id);
+                return next;
+            });
+        }
+    };
+
+    const handleDelete = (automation: AutomationCardModel) => {
+        if (Platform.OS === 'web') {
+            const confirmed = globalThis.confirm?.(`Xóa "${automation.name}"?`);
+            if (confirmed) {
+                void deleteAutomation(automation);
+            }
+            return;
+        }
+
+        Alert.alert(
+            'Xóa tự động hóa',
+            `Bạn có chắc muốn xóa "${automation.name}" không?`,
+            [
+                { text: 'Hủy', style: 'cancel' },
+                {
+                    text: 'Xóa',
+                    style: 'destructive',
+                    onPress: () => void deleteAutomation(automation),
+                },
+            ],
+        );
+    };
+
     const activeCount = automations.filter((a) => a.isEnabled).length;
 
     return (
@@ -107,7 +153,12 @@ export default function AutomationScreen() {
                 keyExtractor={(item) => item.id}
                 contentContainerStyle={{ padding: Spacing.md, gap: Spacing.sm }}
                 renderItem={({ item }) => (
-                    <AutomationCard automation={item} onToggle={handleToggle} />
+                    <AutomationCard
+                        automation={item}
+                        onToggle={handleToggle}
+                        onDelete={handleDelete}
+                        deleting={deletingIds.has(item.id)}
+                    />
                 )}
                 showsVerticalScrollIndicator={false}
                 ListEmptyComponent={

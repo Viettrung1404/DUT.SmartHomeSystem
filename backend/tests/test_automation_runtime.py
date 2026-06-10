@@ -55,6 +55,79 @@ def test_set_speed_updates_power_and_speed():
     assert next_state["speed"] == "strong"
 
 
+def test_open_close_action_updates_lock_state():
+    device = SimpleNamespace(type="LOCK", config={})
+    action = SimpleNamespace(action="close", value=None)
+
+    command, value, next_state = engine._resolve_action(
+        device,
+        action,
+        {"power": "ON", "door": "open", "isLocked": False},
+    )
+
+    assert command == "close"
+    assert value is None
+    assert next_state["power"] == "OFF"
+    assert next_state["door"] == "closed"
+    assert next_state["isLocked"] is True
+
+
+def test_set_position_updates_rain_servo_state():
+    device = SimpleNamespace(type="SENSOR", config={"kind": "rain_servo"})
+    action = SimpleNamespace(action="set_position", value="wet")
+
+    command, value, next_state = engine._resolve_action(device, action, {"power": "OFF"})
+
+    assert command == "set_position"
+    assert value == "wet"
+    assert next_state["power"] == "ON"
+    assert next_state["position"] == "wet"
+
+
+def test_set_angle_clamps_and_updates_power():
+    device = SimpleNamespace(type="SENSOR", config={"kind": "rain_servo"})
+    action = SimpleNamespace(action="set_angle", value="220")
+
+    command, value, next_state = engine._resolve_action(device, action, {"power": "OFF"})
+
+    assert command == "set_angle"
+    assert value == "220"
+    assert next_state["power"] == "ON"
+    assert next_state["angle"] == 180
+
+
+def test_device_status_condition_reads_device_state():
+    device_id = uuid4()
+    device = SimpleNamespace(
+        id=device_id,
+        state=SimpleNamespace(is_online=True, state={"power": "ON"}),
+    )
+    db = _FakeDb(device=device, room=None)
+    condition = SimpleNamespace(
+        id=uuid4(),
+        condition_type="device_status",
+        value=f'{{"device_id": "{device_id}", "field": "status", "operator": "eq", "value": true}}',
+    )
+
+    assert engine._condition_matches(condition, "12:00", 1, db)
+
+
+def test_temperature_condition_compares_numeric_state():
+    device_id = uuid4()
+    device = SimpleNamespace(
+        id=device_id,
+        state=SimpleNamespace(is_online=True, state={"temperature": 32}),
+    )
+    db = _FakeDb(device=device, room=None)
+    condition = SimpleNamespace(
+        id=uuid4(),
+        condition_type="temperature",
+        value=f'{{"device_id": "{device_id}", "field": "temperature", "operator": ">", "value": 30}}',
+    )
+
+    assert engine._condition_matches(condition, "12:00", 1, db)
+
+
 class _FakeQuery:
     def __init__(self, result):
         self._result = result

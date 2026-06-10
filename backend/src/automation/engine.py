@@ -5,7 +5,7 @@ Automation engine checks time-based conditions and executes device actions via M
 import json
 import logging
 from datetime import datetime, timezone
-from uuid import uuid4
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -13,6 +13,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 scheduler = BackgroundScheduler()
 _db_session_factory = None
+_active_state_condition_triggers: set[str] = set()
 
 
 def _schedule_context(now_utc: datetime, timezone_name: str | None) -> tuple[str, int]:
@@ -27,18 +28,127 @@ def _schedule_context(now_utc: datetime, timezone_name: str | None) -> tuple[str
     return local_now.strftime("%H:%M"), (local_now.weekday() + 1) % 7
 
 
-def _condition_matches(condition, current_time: str, current_weekday: int) -> bool:
+def _parse_condition_payload(condition) -> dict | None:
+    try:
+        payload = json.loads(condition.value)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        logging.warning(
+            "Invalid %s payload on automation condition %s",
+            condition.condition_type,
+            condition.id,
+        )
+        return None
+    if not isinstance(payload, dict):
+        logging.warning(
+            "Non-object %s payload on automation condition %s",
+            condition.condition_type,
+            condition.id,
+        )
+        return None
+    return payload
+
+
+def _coerce_comparable(value):
+    if isinstance(value, str):
+        normalized = value.strip()
+        lowered = normalized.lower()
+        if lowered in {"true", "on", "open", "yes", "1"}:
+            return True
+        if lowered in {"false", "off", "closed", "close", "no", "0"}:
+            return False
+        try:
+            return float(normalized)
+        except ValueError:
+            return normalized.lower()
+    return value
+
+
+def _compare_values(actual, operator: str, expected) -> bool:
+    left = _coerce_comparable(actual)
+    right = _coerce_comparable(expected)
+    op = str(operator or "eq").strip().lower()
+
+    if op in {"eq", "=", "=="}:
+        return left == right
+    if op in {"ne", "!=", "<>"}:
+        return left != right
+
+    try:
+        left_number = float(left)
+        right_number = float(right)
+    except (TypeError, ValueError):
+        return False
+
+    if op == ">":
+        return left_number > right_number
+    if op == ">=":
+        return left_number >= right_number
+    if op == "<":
+        return left_number < right_number
+    if op == "<=":
+        return left_number <= right_number
+    return False
+
+
+def _state_field_value(state: dict, field: str):
+    normalized = str(field or "").strip()
+    if normalized == "status":
+        return state.get("power", "OFF") == "ON"
+    if normalized == "motion":
+        if "motion" in state:
+            return state.get("motion")
+        if "distance_alert" in state:
+            return state.get("distance_alert")
+        return False
+    return state.get(normalized)
+
+
+def _state_condition_matches(condition, db) -> bool:
+    if db is None:
+        return False
+
+    payload = _parse_condition_payload(condition)
+    if not payload:
+        return False
+
+    device_id = payload.get("device_id")
+    if not device_id:
+        return False
+    try:
+        device_uuid = UUID(str(device_id))
+    except (TypeError, ValueError):
+        return False
+
+    from src.entities.models import Device
+
+    device = db.query(Device).filter(Device.id == device_uuid).first()
+    if not device or not device.state or not device.state.is_online:
+        return False
+
+    state = dict(device.state.state or {})
+    if condition.condition_type == "device_status":
+        field = str(payload.get("field") or "status")
+    elif condition.condition_type == "motion":
+        field = str(payload.get("field") or "motion")
+    elif condition.condition_type == "temperature":
+        field = str(payload.get("field") or "temperature")
+    else:
+        return False
+
+    return _compare_values(
+        _state_field_value(state, field),
+        str(payload.get("operator") or "eq"),
+        payload.get("value"),
+    )
+
+
+def _condition_matches(condition, current_time: str, current_weekday: int, db=None) -> bool:
     if condition.condition_type == "time":
         return condition.value == current_time
 
     if condition.condition_type == "weekday_time":
-        try:
-            payload = json.loads(condition.value)
-        except (TypeError, ValueError, json.JSONDecodeError):
-            logging.warning(
-                "Invalid weekday_time payload on automation condition %s",
-                condition.id,
-            )
+        payload = _parse_condition_payload(condition)
+        if not payload:
             return False
 
         expected_time = str(payload.get("time", "")).strip()
@@ -53,6 +163,9 @@ def _condition_matches(condition, current_time: str, current_weekday: int) -> bo
             return False
 
         return expected_time == current_time and current_weekday in normalized_days
+
+    if condition.condition_type in {"device_status", "motion", "temperature"}:
+        return _state_condition_matches(condition, db)
 
     return False
 
@@ -125,9 +238,20 @@ def _resolve_action(device, action, old_state: dict) -> tuple[str, object | None
         next_state["door"] = "open" if is_open else "closed"
         _apply_power_state(next_state, is_on=is_open)
     elif command == "set_position":
-        next_state["position"] = value
+        position = str(value or "").strip().lower()
+        next_state["position"] = position
+        if position in {"wet", "rain", "open"}:
+            _apply_power_state(next_state, is_on=True)
+        elif position in {"dry", "clear", "close", "closed"}:
+            _apply_power_state(next_state, is_on=False)
     elif command == "set_angle":
-        next_state["angle"] = value
+        try:
+            angle = max(0, min(180, float(value)))
+        except (TypeError, ValueError):
+            angle = value
+        next_state["angle"] = angle
+        if isinstance(angle, (int, float)):
+            _apply_power_state(next_state, is_on=angle > 0)
     elif command in {"turn_on", "on"}:
         command = "turn_on"
         _apply_power_state(next_state, is_on=True)
@@ -177,11 +301,24 @@ def check_time_automations(now: datetime | None = None):
                 now_utc,
                 getattr(getattr(automation, "home", None), "timezone", None),
             )
+            has_state_conditions = any(
+                condition.condition_type in {"device_status", "motion", "temperature"}
+                for condition in automation.conditions
+            )
             conditions_met = True
             for condition in automation.conditions:
-                if not _condition_matches(condition, current_time, current_weekday):
+                if not _condition_matches(condition, current_time, current_weekday, db):
                     conditions_met = False
                     break
+
+            trigger_key = str(automation.id)
+            if not conditions_met:
+                if has_state_conditions:
+                    _active_state_condition_triggers.discard(trigger_key)
+                continue
+
+            if has_state_conditions and trigger_key in _active_state_condition_triggers:
+                continue
 
             if conditions_met and automation.conditions:
                 logging.info("Automation triggered: %s", automation.name)
@@ -225,6 +362,8 @@ def check_time_automations(now: datetime | None = None):
                         logging.error("Automation action failed: %s", e)
 
                 db.commit()
+                if has_state_conditions:
+                    _active_state_condition_triggers.add(trigger_key)
     except Exception as e:
         logging.error("Automation check error: %s", e)
     finally:

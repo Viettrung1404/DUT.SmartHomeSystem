@@ -2,23 +2,16 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useTheme } from '@/contexts/ThemeContext';
+import { Feather } from '@expo/vector-icons';
+
 import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { Spacing, BorderRadius } from '@/constants/theme';
+import { BorderRadius, Spacing } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
-import { Feather } from '@expo/vector-icons';
+import { useTheme } from '@/contexts/ThemeContext';
 import { automationsAPI, devicesAPI, homesAPI, roomsAPI } from '@/services/api';
-
-interface StepItem {
-    type: string;
-    label: string;
-    icon: keyof typeof Feather.glyphMap;
-    available: boolean;
-    helperText?: string;
-}
 
 interface SelectableDevice {
     id: string;
@@ -26,31 +19,6 @@ interface SelectableDevice {
     type: string;
     roomName: string;
 }
-
-const conditions: StepItem[] = [
-    { type: 'time', label: 'Theo thời gian', icon: 'clock', available: true },
-    {
-        type: 'device',
-        label: 'Trạng thái thiết bị',
-        icon: 'cpu',
-        available: false,
-        helperText: 'Backend hiện mới tự chạy điều kiện theo giờ.',
-    },
-    {
-        type: 'motion',
-        label: 'Phát hiện chuyển động',
-        icon: 'activity',
-        available: false,
-        helperText: 'Luồng chuyển động chưa được engine xử lý.',
-    },
-    {
-        type: 'temperature',
-        label: 'Nhiệt độ',
-        icon: 'thermometer',
-        available: false,
-        helperText: 'Điều kiện nhiệt độ chưa được engine xử lý.',
-    },
-];
 
 const weekdayOptions = [
     { value: 1, label: 'T2' },
@@ -60,52 +28,6 @@ const weekdayOptions = [
     { value: 5, label: 'T6' },
     { value: 6, label: 'T7' },
     { value: 0, label: 'CN' },
-];
-
-const actions: StepItem[] = [
-    { type: 'toggle', label: 'Bật/Tắt thiết bị', icon: 'power', available: true },
-    {
-        type: 'set_speed',
-        label: 'Chọn tốc độ quạt',
-        icon: 'wind',
-        available: false,
-        helperText: 'Engine chưa thực thi set_speed từ automation.',
-    },
-    {
-        type: 'open_close',
-        label: 'Mở/Đóng cửa',
-        icon: 'unlock',
-        available: false,
-        helperText: 'Dùng Toggle cho khóa/cửa ở phiên bản hiện tại.',
-    },
-    {
-        type: 'set_position',
-        label: 'Chọn chế độ che mưa',
-        icon: 'droplet',
-        available: false,
-        helperText: 'Engine chưa thực thi set_position từ automation.',
-    },
-    {
-        type: 'set_angle',
-        label: 'Đặt góc che mưa',
-        icon: 'sliders',
-        available: false,
-        helperText: 'Engine chưa thực thi set_angle từ automation.',
-    },
-    {
-        type: 'notify',
-        label: 'Gửi thông báo',
-        icon: 'bell',
-        available: false,
-        helperText: 'Thông báo chủ động chưa được nối backend.',
-    },
-    {
-        type: 'scene',
-        label: 'Kích hoạt kịch bản',
-        icon: 'play',
-        available: false,
-        helperText: 'Scene chưa có backend thực thi.',
-    },
 ];
 
 function getDeviceIcon(type: string): keyof typeof Feather.glyphMap {
@@ -135,37 +57,52 @@ function isValidTime(value: string): boolean {
 export default function CreateAutomationScreen() {
     const { colors } = useTheme();
     const router = useRouter();
+
     const [step, setStep] = useState(0);
-    const [selectedCondition, setSelectedCondition] = useState<StepItem | null>(null);
-    const [selectedAction, setSelectedAction] = useState<StepItem | null>(null);
     const [timeValue, setTimeValue] = useState('22:00');
     const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([]);
     const [automationName, setAutomationName] = useState('');
-    const [actionValue, setActionValue] = useState<'true' | 'false'>('true');
+    const [deviceActionValues, setDeviceActionValues] = useState<Record<string, 'true' | 'false'>>({});
     const [homeId, setHomeId] = useState<string | null>(null);
     const [devices, setDevices] = useState<SelectableDevice[]>([]);
-    const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
+    const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([]);
     const [loadingOptions, setLoadingOptions] = useState(true);
     const [saving, setSaving] = useState(false);
 
-    const stepTitles = ['Điều kiện (NẾU)', 'Hành động (THÌ)', 'Xem lại'];
-    const selectedDevice = useMemo(
-        () => devices.find((device) => device.id === selectedDeviceId) ?? null,
-        [devices, selectedDeviceId],
+    const stepTitles = ['Điều kiện', 'Thiết bị', 'Xem lại'];
+    const selectedDevices = useMemo(
+        () => devices.filter((device) => selectedDeviceIds.includes(device.id)),
+        [devices, selectedDeviceIds],
     );
-    const canAdvanceFromStep0 = !!selectedCondition && selectedCondition.available && isValidTime(timeValue);
-    const canAdvanceFromStep1 = !!selectedAction && selectedAction.available && !!selectedDeviceId;
-    const canSubmit =
-        !!homeId &&
-        !!selectedCondition &&
-        !!selectedAction &&
-        !!selectedDeviceId &&
-        isValidTime(timeValue) &&
-        automationName.trim().length > 0;
     const selectedWeekdayLabels = weekdayOptions
         .filter((option) => selectedWeekdays.includes(option.value))
         .map((option) => option.label)
         .join(', ');
+    const actionCounts = selectedDeviceIds.reduce(
+        (counts, deviceId) => {
+            if ((deviceActionValues[deviceId] ?? 'true') === 'true') {
+                counts.on += 1;
+            } else {
+                counts.off += 1;
+            }
+            return counts;
+        },
+        { on: 0, off: 0 },
+    );
+    const actionSummary =
+        actionCounts.on > 0 && actionCounts.off > 0
+            ? `Bật/Mở ${actionCounts.on}, Tắt/Đóng ${actionCounts.off}`
+            : actionCounts.off > 0
+                ? 'Tắt / Đóng'
+                : 'Bật / Mở';
+    const deviceSummary =
+        selectedDevices.length <= 3
+            ? selectedDevices.map((device) => device.name).join(', ')
+            : `${selectedDevices.slice(0, 3).map((device) => device.name).join(', ')} +${selectedDevices.length - 3}`;
+
+    const canAdvanceFromStep0 = isValidTime(timeValue);
+    const canAdvanceFromStep1 = selectedDeviceIds.length > 0;
+    const canSubmit = !!homeId && canAdvanceFromStep0 && canAdvanceFromStep1 && automationName.trim().length > 0;
 
     const toggleWeekday = (day: number) => {
         setSelectedWeekdays((current) =>
@@ -173,6 +110,27 @@ export default function CreateAutomationScreen() {
                 ? current.filter((value) => value !== day)
                 : [...current, day].sort((a, b) => a - b),
         );
+    };
+
+    const toggleDeviceSelection = (deviceId: string) => {
+        setSelectedDeviceIds((current) => {
+            if (current.includes(deviceId)) {
+                setDeviceActionValues((values) => {
+                    const next = { ...values };
+                    delete next[deviceId];
+                    return next;
+                });
+                return current.filter((id) => id !== deviceId);
+            }
+
+            setDeviceActionValues((values) => ({ ...values, [deviceId]: values[deviceId] ?? 'true' }));
+            return [...current, deviceId];
+        });
+    };
+
+    const setDeviceActionValue = (deviceId: string, value: 'true' | 'false') => {
+        setSelectedDeviceIds((current) => (current.includes(deviceId) ? current : [...current, deviceId]));
+        setDeviceActionValues((current) => ({ ...current, [deviceId]: value }));
     };
 
     useEffect(() => {
@@ -186,6 +144,7 @@ export default function CreateAutomationScreen() {
                     if (isMounted) {
                         setHomeId(null);
                         setDevices([]);
+                        setSelectedDeviceIds([]);
                     }
                     return;
                 }
@@ -209,14 +168,18 @@ export default function CreateAutomationScreen() {
                 const flattenedDevices = deviceGroups.flat();
                 setHomeId(firstHomeId);
                 setDevices(flattenedDevices);
-                setSelectedCondition((prev) => prev ?? conditions[0]);
-                setSelectedAction((prev) => prev ?? actions[0]);
-                setSelectedDeviceId((prev) => prev ?? flattenedDevices[0]?.id ?? null);
+                setSelectedDeviceIds((current) => (current.length ? current : flattenedDevices[0] ? [flattenedDevices[0].id] : []));
+                setDeviceActionValues((current) =>
+                    Object.keys(current).length || !flattenedDevices[0]
+                        ? current
+                        : { [flattenedDevices[0].id]: 'true' },
+                );
             } catch (error) {
                 console.error('Failed to load automation options:', error);
                 if (isMounted) {
                     setHomeId(null);
                     setDevices([]);
+                    setSelectedDeviceIds([]);
                 }
             } finally {
                 if (isMounted) {
@@ -233,12 +196,13 @@ export default function CreateAutomationScreen() {
     }, []);
 
     useEffect(() => {
-        if (!selectedDevice || automationName.trim()) return;
-        setAutomationName(`Tự động ${actionValue === 'true' ? 'bật' : 'tắt'} ${selectedDevice.name}`);
-    }, [actionValue, automationName, selectedDevice]);
+        if (automationName.trim() || selectedDevices.length === 0) return;
+        const target = selectedDevices.length === 1 ? selectedDevices[0].name : `${selectedDevices.length} thiết bị`;
+        setAutomationName(`Tự động ${target}`);
+    }, [automationName, selectedDevices]);
 
     const handleCreateAutomation = async () => {
-        if (!canSubmit || !homeId || !selectedDeviceId) return;
+        if (!canSubmit || !homeId) return;
 
         try {
             setSaving(true);
@@ -257,8 +221,13 @@ export default function CreateAutomationScreen() {
                 home_id: homeId,
                 name: automationName.trim(),
                 conditions: [condition],
-                actions: [{ device_id: selectedDeviceId, action: 'toggle', value: actionValue }],
+                actions: selectedDeviceIds.map((deviceId) => ({
+                    device_id: deviceId,
+                    action: 'toggle',
+                    value: deviceActionValues[deviceId] ?? 'true',
+                })),
             });
+
             Alert.alert('Đã tạo tự động hóa', 'Kịch bản mới đã được lưu và sẽ xuất hiện ở danh sách.');
             router.back();
         } catch (error) {
@@ -275,7 +244,7 @@ export default function CreateAutomationScreen() {
 
             <View style={{ flexDirection: 'row', paddingHorizontal: Spacing.md, marginBottom: Spacing.md, gap: Spacing.xs }}>
                 {stepTitles.map((title, i) => (
-                    <View key={i} style={{ flex: 1, alignItems: 'center' }}>
+                    <View key={title} style={{ flex: 1, alignItems: 'center' }}>
                         <View
                             style={{
                                 width: 32,
@@ -300,18 +269,6 @@ export default function CreateAutomationScreen() {
                         <Text style={[Typography.caption, { color: i <= step ? colors.primary : colors.textTertiary, textAlign: 'center' }]}>
                             {title}
                         </Text>
-                        {i < stepTitles.length - 1 && (
-                            <View
-                                style={{
-                                    position: 'absolute',
-                                    top: 15,
-                                    left: '75%',
-                                    right: '-75%',
-                                    height: 2,
-                                    backgroundColor: i < step ? colors.primary : colors.border,
-                                }}
-                            />
-                        )}
                     </View>
                 ))}
             </View>
@@ -320,9 +277,7 @@ export default function CreateAutomationScreen() {
                 {loadingOptions ? (
                     <View style={{ paddingVertical: Spacing.xxl, alignItems: 'center', gap: Spacing.md }}>
                         <ActivityIndicator size="large" color={colors.primary} />
-                        <Text style={[Typography.body, { color: colors.textSecondary }]}>
-                            Đang tải thiết bị và cấu hình nhà...
-                        </Text>
+                        <Text style={[Typography.body, { color: colors.textSecondary }]}>Đang tải thiết bị và cấu hình nhà...</Text>
                     </View>
                 ) : !homeId ? (
                     <Card>
@@ -337,52 +292,38 @@ export default function CreateAutomationScreen() {
                             <>
                                 <Text style={[Typography.h2, { color: colors.text, marginBottom: Spacing.xs }]}>NẾU...</Text>
                                 <Text style={[Typography.body, { color: colors.textSecondary, marginBottom: Spacing.lg }]}>
-                                    Chọn điều kiện kích hoạt tự động hóa
+                                    Chạy tự động hóa theo thời gian đã đặt
                                 </Text>
-                                <View style={{ gap: Spacing.sm }}>
-                                    {conditions.map((condition) => (
-                                        <Card
-                                            key={condition.type}
-                                            onPress={() => condition.available && setSelectedCondition(condition)}
+
+                                <Card
+                                    style={{
+                                        borderWidth: 2,
+                                        borderColor: colors.primary,
+                                    }}
+                                >
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.md }}>
+                                        <View
                                             style={{
-                                                borderWidth: selectedCondition?.type === condition.type ? 2 : 1,
-                                                borderColor: selectedCondition?.type === condition.type ? colors.primary : colors.border,
-                                                opacity: condition.available ? 1 : 0.6,
+                                                width: 44,
+                                                height: 44,
+                                                borderRadius: 12,
+                                                backgroundColor: colors.primaryLight,
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
                                             }}
                                         >
-                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.md }}>
-                                                <View
-                                                    style={{
-                                                        width: 44,
-                                                        height: 44,
-                                                        borderRadius: 12,
-                                                        backgroundColor:
-                                                            selectedCondition?.type === condition.type ? colors.primaryLight : colors.surface,
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center',
-                                                    }}
-                                                >
-                                                    <Feather
-                                                        name={condition.icon}
-                                                        size={20}
-                                                        color={selectedCondition?.type === condition.type ? colors.primary : colors.icon}
-                                                    />
-                                                </View>
-                                                <View style={{ flex: 1 }}>
-                                                    <Text style={[Typography.bodyMedium, { color: colors.text }]}>{condition.label}</Text>
-                                                    {!condition.available && condition.helperText && (
-                                                        <Text style={[Typography.caption, { color: colors.textSecondary, marginTop: Spacing.xs }]}>
-                                                            {condition.helperText}
-                                                        </Text>
-                                                    )}
-                                                </View>
-                                                {selectedCondition?.type === condition.type && (
-                                                    <Feather name="check-circle" size={20} color={colors.primary} style={{ marginLeft: 'auto' }} />
-                                                )}
-                                            </View>
-                                        </Card>
-                                    ))}
-                                </View>
+                                            <Feather name="clock" size={20} color={colors.primary} />
+                                        </View>
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={[Typography.bodyMedium, { color: colors.text }]}>Theo thời gian</Text>
+                                            <Text style={[Typography.caption, { color: colors.textSecondary, marginTop: Spacing.xs }]}>
+                                                Engine sẽ kiểm tra lịch mỗi phút.
+                                            </Text>
+                                        </View>
+                                        <Feather name="check-circle" size={20} color={colors.primary} />
+                                    </View>
+                                </Card>
+
                                 <Input
                                     label="Giờ kích hoạt (HH:MM)"
                                     placeholder="22:00"
@@ -396,112 +337,59 @@ export default function CreateAutomationScreen() {
                                     }
                                     style={{ marginTop: Spacing.lg }}
                                 />
+
+                                <Text style={[Typography.h3, { color: colors.text, marginTop: Spacing.lg, marginBottom: Spacing.sm }]}>
+                                    Ngày trong tuần
+                                </Text>
+                                <Text style={[Typography.caption, { color: colors.textSecondary, marginBottom: Spacing.sm }]}>
+                                    Không chọn ngày nào thì kịch bản sẽ chạy mỗi ngày.
+                                </Text>
+                                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs }}>
+                                    {weekdayOptions.map((option) => {
+                                        const isSelected = selectedWeekdays.includes(option.value);
+                                        return (
+                                            <Pressable
+                                                key={option.value}
+                                                onPress={() => toggleWeekday(option.value)}
+                                                style={{
+                                                    minWidth: 44,
+                                                    paddingVertical: Spacing.sm,
+                                                    paddingHorizontal: Spacing.md,
+                                                    borderRadius: BorderRadius.md,
+                                                    backgroundColor: isSelected ? colors.primaryLight : colors.surface,
+                                                    borderWidth: 1.5,
+                                                    borderColor: isSelected ? colors.primary : colors.border,
+                                                    alignItems: 'center',
+                                                }}
+                                            >
+                                                <Text style={[Typography.captionMedium, { color: isSelected ? colors.primary : colors.textSecondary }]}>
+                                                    {option.label}
+                                                </Text>
+                                            </Pressable>
+                                        );
+                                    })}
+                                </View>
                             </>
                         )}
-
-                                {step === 0 && selectedCondition?.type === 'time' && (
-                                    <>
-                                        <Text style={[Typography.h3, { color: colors.text, marginTop: Spacing.lg, marginBottom: Spacing.sm }]}>
-                                            Ngay trong tuan
-                                        </Text>
-                                        <Text style={[Typography.caption, { color: colors.textSecondary, marginBottom: Spacing.sm }]}>
-                                            Khong chon ngay nao thi kich ban se chay moi ngay.
-                                        </Text>
-                                        <Text style={[Typography.h3, { color: colors.text, display: 'none' }]}>
-                                            NgÃ y trong tuáº§n
-                                        </Text>
-                                        <Text style={[Typography.caption, { color: colors.textSecondary, display: 'none' }]}>
-                                            KhÃ´ng chá»n ngÃ y nÃ o thÃ¬ ká»‹ch báº£n sáº½ cháº¡y má»—i ngÃ y.
-                                        </Text>
-                                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs }}>
-                                            {weekdayOptions.map((option) => {
-                                                const isSelected = selectedWeekdays.includes(option.value);
-                                                return (
-                                                    <Pressable
-                                                        key={option.value}
-                                                        onPress={() => toggleWeekday(option.value)}
-                                                        style={{
-                                                            minWidth: 44,
-                                                            paddingVertical: Spacing.sm,
-                                                            paddingHorizontal: Spacing.md,
-                                                            borderRadius: BorderRadius.md,
-                                                            backgroundColor: isSelected ? colors.primaryLight : colors.surface,
-                                                            borderWidth: 1.5,
-                                                            borderColor: isSelected ? colors.primary : colors.border,
-                                                            alignItems: 'center',
-                                                        }}
-                                                    >
-                                                        <Text style={[Typography.captionMedium, { color: isSelected ? colors.primary : colors.textSecondary }]}>
-                                                            {option.label}
-                                                        </Text>
-                                                    </Pressable>
-                                                );
-                                            })}
-                                        </View>
-                                    </>
-                                )}
 
                         {step === 1 && (
                             <>
                                 <Text style={[Typography.h2, { color: colors.text, marginBottom: Spacing.xs }]}>THÌ...</Text>
                                 <Text style={[Typography.body, { color: colors.textSecondary, marginBottom: Spacing.lg }]}>
-                                    Chọn hành động sẽ thực hiện
+                                    Bật hoặc tắt một hay nhiều thiết bị
                                 </Text>
-                                <View style={{ gap: Spacing.sm }}>
-                                    {actions.map((action) => (
-                                        <Card
-                                            key={action.type}
-                                            onPress={() => action.available && setSelectedAction(action)}
-                                            style={{
-                                                borderWidth: selectedAction?.type === action.type ? 2 : 1,
-                                                borderColor: selectedAction?.type === action.type ? colors.primary : colors.border,
-                                                opacity: action.available ? 1 : 0.6,
-                                            }}
-                                        >
-                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.md }}>
-                                                <View
-                                                    style={{
-                                                        width: 44,
-                                                        height: 44,
-                                                        borderRadius: 12,
-                                                        backgroundColor: selectedAction?.type === action.type ? colors.primaryLight : colors.surface,
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center',
-                                                    }}
-                                                >
-                                                    <Feather
-                                                        name={action.icon}
-                                                        size={20}
-                                                        color={selectedAction?.type === action.type ? colors.primary : colors.icon}
-                                                    />
-                                                </View>
-                                                <View style={{ flex: 1 }}>
-                                                    <Text style={[Typography.bodyMedium, { color: colors.text }]}>{action.label}</Text>
-                                                    {!action.available && action.helperText && (
-                                                        <Text style={[Typography.caption, { color: colors.textSecondary, marginTop: Spacing.xs }]}>
-                                                            {action.helperText}
-                                                        </Text>
-                                                    )}
-                                                </View>
-                                                {selectedAction?.type === action.type && (
-                                                    <Feather name="check-circle" size={20} color={colors.primary} style={{ marginLeft: 'auto' }} />
-                                                )}
-                                            </View>
-                                        </Card>
-                                    ))}
-                                </View>
 
-                                <Text style={[Typography.h3, { color: colors.text, marginTop: Spacing.lg, marginBottom: Spacing.sm }]}>
-                                    Thiết bị mục tiêu
+                                <Text style={[Typography.h3, { color: colors.text, marginBottom: Spacing.sm }]}>
+                                    Thiết bị mục tiêu ({selectedDeviceIds.length})
                                 </Text>
                                 <View style={{ gap: Spacing.sm }}>
                                     {devices.length ? (
                                         devices.map((device) => {
-                                            const isSelected = selectedDeviceId === device.id;
+                                            const isSelected = selectedDeviceIds.includes(device.id);
                                             return (
                                                 <Card
                                                     key={device.id}
-                                                    onPress={() => setSelectedDeviceId(device.id)}
+                                                    onPress={() => toggleDeviceSelection(device.id)}
                                                     style={{
                                                         borderWidth: isSelected ? 2 : 1,
                                                         borderColor: isSelected ? colors.primary : colors.border,
@@ -526,8 +414,46 @@ export default function CreateAutomationScreen() {
                                                                 {device.roomName} • {device.type}
                                                             </Text>
                                                         </View>
-                                                        {isSelected && <Feather name="check-circle" size={20} color={colors.primary} />}
+                                                        <Feather
+                                                            name={isSelected ? 'check-circle' : 'circle'}
+                                                            size={20}
+                                                            color={isSelected ? colors.primary : colors.textTertiary}
+                                                        />
                                                     </View>
+                                                    {isSelected && (
+                                                        <View style={{ flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md }}>
+                                                            {[
+                                                                { label: 'Bật / Mở', value: 'true' as const },
+                                                                { label: 'Tắt / Đóng', value: 'false' as const },
+                                                            ].map((option) => {
+                                                                const selectedAction = (deviceActionValues[device.id] ?? 'true') === option.value;
+                                                                return (
+                                                                    <Pressable
+                                                                        key={option.value}
+                                                                        onPress={() => setDeviceActionValue(device.id, option.value)}
+                                                                        style={{
+                                                                            flex: 1,
+                                                                            paddingVertical: Spacing.sm,
+                                                                            borderRadius: BorderRadius.md,
+                                                                            backgroundColor: selectedAction ? colors.primaryLight : colors.surface,
+                                                                            borderWidth: 1.5,
+                                                                            borderColor: selectedAction ? colors.primary : colors.border,
+                                                                            alignItems: 'center',
+                                                                        }}
+                                                                    >
+                                                                        <Text
+                                                                            style={[
+                                                                                Typography.captionMedium,
+                                                                                { color: selectedAction ? colors.primary : colors.textSecondary },
+                                                                            ]}
+                                                                        >
+                                                                            {option.label}
+                                                                        </Text>
+                                                                    </Pressable>
+                                                                );
+                                                            })}
+                                                        </View>
+                                                    )}
                                                 </Card>
                                             );
                                         })
@@ -539,37 +465,6 @@ export default function CreateAutomationScreen() {
                                         </Card>
                                     )}
                                 </View>
-
-                                <Text style={[Typography.h3, { color: colors.text, marginTop: Spacing.lg, marginBottom: Spacing.sm }]}>
-                                    Hành động
-                                </Text>
-                                <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
-                                    {[
-                                        { label: 'Bật / Mở', value: 'true' as const },
-                                        { label: 'Tắt / Đóng', value: 'false' as const },
-                                    ].map((option) => {
-                                        const isSelected = actionValue === option.value;
-                                        return (
-                                            <Pressable
-                                                key={option.value}
-                                                onPress={() => setActionValue(option.value)}
-                                                style={{
-                                                    flex: 1,
-                                                    paddingVertical: Spacing.md,
-                                                    borderRadius: BorderRadius.md,
-                                                    backgroundColor: isSelected ? colors.primaryLight : colors.surface,
-                                                    borderWidth: 1.5,
-                                                    borderColor: isSelected ? colors.primary : colors.border,
-                                                    alignItems: 'center',
-                                                }}
-                                            >
-                                                <Text style={[Typography.captionMedium, { color: isSelected ? colors.primary : colors.textSecondary }]}>
-                                                    {option.label}
-                                                </Text>
-                                            </Pressable>
-                                        );
-                                    })}
-                                </View>
                             </>
                         )}
 
@@ -578,7 +473,7 @@ export default function CreateAutomationScreen() {
                                 <Text style={[Typography.h2, { color: colors.text, marginBottom: Spacing.lg }]}>Xem lại</Text>
                                 <Input
                                     label="Tên tự động hóa"
-                                    placeholder="Ví dụ: Bật đèn sân lúc 18:30"
+                                    placeholder="Ví dụ: Tắt đèn tầng 1 lúc 23:00"
                                     value={automationName}
                                     onChangeText={setAutomationName}
                                     icon="zap"
@@ -590,9 +485,9 @@ export default function CreateAutomationScreen() {
                                         <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
                                     </View>
                                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.md }}>
-                                        <Feather name={selectedCondition?.icon || 'circle'} size={20} color={colors.primary} />
+                                        <Feather name="clock" size={20} color={colors.primary} />
                                         <View>
-                                            <Text style={[Typography.body, { color: colors.text }]}>{selectedCondition?.label}</Text>
+                                            <Text style={[Typography.body, { color: colors.text }]}>Theo thời gian</Text>
                                             <Text style={[Typography.caption, { color: colors.textSecondary, marginTop: Spacing.xs }]}>
                                                 Lúc {timeValue}{selectedWeekdayLabels ? ` - ${selectedWeekdayLabels}` : ' - mỗi ngày'}
                                             </Text>
@@ -608,12 +503,19 @@ export default function CreateAutomationScreen() {
                                         <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
                                     </View>
                                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.md }}>
-                                        <Feather name={selectedAction?.icon || 'circle'} size={20} color={colors.warning} />
-                                        <View>
-                                            <Text style={[Typography.body, { color: colors.text }]}>{selectedAction?.label}</Text>
+                                        <Feather name="power" size={20} color={colors.warning} />
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={[Typography.body, { color: colors.text }]}>{actionSummary}</Text>
                                             <Text style={[Typography.caption, { color: colors.textSecondary, marginTop: Spacing.xs }]}>
-                                                {selectedDevice?.name ?? 'Chưa chọn thiết bị'} • {actionValue === 'true' ? 'Bật / Mở' : 'Tắt / Đóng'}
+                                                {selectedDeviceIds.length} thiết bị: {deviceSummary}
                                             </Text>
+                                            <View style={{ gap: Spacing.xs, marginTop: Spacing.sm }}>
+                                                {selectedDevices.map((device) => (
+                                                    <Text key={device.id} style={[Typography.caption, { color: colors.textSecondary }]}>
+                                                        {device.name}: {(deviceActionValues[device.id] ?? 'true') === 'true' ? 'Bật / Mở' : 'Tắt / Đóng'}
+                                                    </Text>
+                                                ))}
+                                            </View>
                                         </View>
                                     </View>
                                 </Card>
