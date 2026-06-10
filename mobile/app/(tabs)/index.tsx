@@ -1,15 +1,17 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, ScrollView, FlatList, Pressable, ActivityIndicator, useWindowDimensions } from 'react-native';
+import { View, Text, ScrollView, FlatList, Pressable, ActivityIndicator, useWindowDimensions, Image, TextInput, Alert } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
 import { AIInsight, AIInsightCard } from '@/components/AIInsightCard';
 import { QuickAction } from '@/components/QuickAction';
 import { Spacing, BorderRadius } from '@/constants/theme';
 import { Typography } from '@/constants/typography';
 import { Feather } from '@expo/vector-icons';
-import { homesAPI, roomsAPI, suggestionsAPI, devicesAPI, DeviceResponse } from '@/services/api';
+import { homesAPI, roomsAPI, suggestionsAPI, devicesAPI, faceAPI, DeviceResponse } from '@/services/api';
 import { useWebSocket } from '@/hooks/use-websocket';
 import { resolveRoomIcon } from '@/utils/roomIcons';
 import {
@@ -63,6 +65,10 @@ export default function DashboardScreen() {
   const [insights, setInsights] = useState<AIInsight[]>([]);
   const [loading, setLoading] = useState(true);
   const [quickActionBusy, setQuickActionBusy] = useState<QuickActionId | null>(null);
+  const [faceImages, setFaceImages] = useState<ImagePicker.ImagePickerAsset[]>([]);
+  const [facePersonId, setFacePersonId] = useState('');
+  const [faceEnrollBusy, setFaceEnrollBusy] = useState(false);
+  const [faceEnrollMessage, setFaceEnrollMessage] = useState<string | null>(null);
   const { subscribe } = useWebSocket(homeId);
 
   const roomCardWidth = (() => {
@@ -264,6 +270,63 @@ export default function DashboardScreen() {
     router.push({ pathname: '/quick-actions/[action]', params: { action: actionId } } as never);
   };
 
+  const handlePickFaceImages = async () => {
+    setFaceEnrollMessage(null);
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Can quyen thu vien anh', 'Hay cho phep ung dung truy cap anh de chon 5 anh khuon mat.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'images',
+      allowsMultipleSelection: true,
+      selectionLimit: 5,
+      orderedSelection: true,
+      base64: true,
+      quality: 0.85,
+    });
+
+    if (result.canceled) return;
+    const selected = result.assets.slice(0, 5);
+    setFaceImages(selected);
+    if (selected.length !== 5) {
+      setFaceEnrollMessage('Hay chon dung 5 anh de enroll.');
+    }
+  };
+
+  const handleEnrollFaceImages = async () => {
+    if (!homeId) return;
+    if (faceImages.length !== 5) {
+      setFaceEnrollMessage('Can dung 5 anh de enroll.');
+      return;
+    }
+
+    const imagesBase64 = faceImages.map((image) => image.base64).filter((value): value is string => Boolean(value));
+    if (imagesBase64.length !== 5) {
+      setFaceEnrollMessage('Khong doc duoc du lieu anh. Hay chon lai 5 anh.');
+      return;
+    }
+
+    const personId = facePersonId.trim();
+    if (!personId) {
+      setFaceEnrollMessage('Nhap ten nguoi de phan biet khi verify.');
+      return;
+    }
+
+    setFaceEnrollBusy(true);
+    setFaceEnrollMessage(null);
+    try {
+      const response = await faceAPI.enrollBatch(homeId, personId, imagesBase64);
+      setFaceEnrollMessage(`Da enroll ${response.saved_count}/5 anh cho ${response.person_id}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Enroll that bai';
+      setFaceEnrollMessage(message);
+    } finally {
+      setFaceEnrollBusy(false);
+    }
+  };
+
   useEffect(() => {
     if (!homeId) return;
     const unsubscribe = subscribe('device_update', (message) => {
@@ -458,6 +521,107 @@ export default function DashboardScreen() {
               );
             })}
           </ScrollView>
+        </View>
+
+        {/* Face enroll */}
+        <View style={{ padding: spacing.md, paddingTop: 0 }}>
+          <Card>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm }}>
+              <View
+                style={{
+                  width: scaled(32), height: scaled(32), borderRadius: scaled(10),
+                  backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                <Feather name="user-check" size={scaledIcon(16)} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[Typography.h3, { color: colors.text }]}>Enroll khuon mat</Text>
+                <Text style={[Typography.caption, { color: colors.textSecondary, marginTop: spacing.xxs }]}>
+                  Nhap ten de moi nha co the verify nhieu nguoi rieng biet.
+                </Text>
+              </View>
+            </View>
+
+            <TextInput
+              value={facePersonId}
+              onChangeText={setFacePersonId}
+              placeholder="Ten nguoi"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="none"
+              style={{
+                minHeight: scaled(44),
+                borderWidth: 1,
+                borderColor: colors.border,
+                borderRadius: BorderRadius.md,
+                paddingHorizontal: spacing.md,
+                color: colors.text,
+                backgroundColor: colors.surface,
+                marginTop: spacing.sm,
+              }}
+            />
+
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md }}>
+              {Array.from({ length: 5 }).map((_, index) => {
+                const image = faceImages[index];
+                return (
+                  <Pressable
+                    key={index}
+                    onPress={handlePickFaceImages}
+                    style={{
+                      width: scaled(56),
+                      height: scaled(56),
+                      borderRadius: BorderRadius.md,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      backgroundColor: colors.cardHover,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {image ? (
+                      <Image source={{ uri: image.uri }} style={{ width: '100%', height: '100%' }} />
+                    ) : (
+                      <Feather name="image" size={scaledIcon(18)} color={colors.iconMuted} />
+                    )}
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {faceEnrollMessage ? (
+              <Text
+                style={[
+                  Typography.caption,
+                  {
+                    color: faceEnrollMessage.startsWith('Da enroll') ? colors.success : colors.error,
+                    marginTop: spacing.sm,
+                  },
+                ]}
+              >
+                {faceEnrollMessage}
+              </Text>
+            ) : null}
+
+            <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
+              <Button
+                title={`Chon anh (${faceImages.length}/5)`}
+                variant="outline"
+                onPress={handlePickFaceImages}
+                icon={<Feather name="image" size={scaledIcon(16)} color={colors.primary} />}
+                style={{ flex: 1 }}
+              />
+              <Button
+                title="Enroll"
+                onPress={handleEnrollFaceImages}
+                loading={faceEnrollBusy}
+                disabled={faceImages.length !== 5 || !homeId || !facePersonId.trim()}
+                icon={<Feather name="upload-cloud" size={scaledIcon(16)} color="#FFFFFF" />}
+                style={{ flex: 1 }}
+              />
+            </View>
+          </Card>
         </View>
 
         <View style={{ height: spacing.xl }} />

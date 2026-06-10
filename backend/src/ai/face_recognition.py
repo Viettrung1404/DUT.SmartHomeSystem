@@ -179,68 +179,77 @@ def _load_gallery_embeddings(gallery_dir: str) -> Tuple[List[str], List[Any]]:
 
     logger.info("Face recognition scanning gallery_dir=%s", gallery_dir)
     home_id = os.path.basename(os.path.normpath(gallery_dir))
-    for entry_name in sorted(os.listdir(gallery_dir)):
-        entry_path = os.path.join(gallery_dir, entry_name)
-        lower_name = entry_name.lower()
+    for root, _, files in os.walk(gallery_dir):
+        relative_dir = os.path.relpath(root, gallery_dir)
 
-        if os.path.isdir(entry_path):
-            logger.info(
-                "Face recognition skipping nested folder in home gallery home_id=%s folder=%s",
-                home_id,
-                entry_path,
-            )
-            continue
+        for entry_name in sorted(files):
+            entry_path = os.path.join(root, entry_name)
+            lower_name = entry_name.lower()
+            person_id = _match_id_for_gallery_file(home_id, relative_dir, entry_name)
 
-        try:
-            embedding = None
-            if lower_name.endswith(".npy"):
-                logger.info(
-                    "Face recognition loading home-level embedding home_id=%s file=%s",
-                    home_id,
-                    entry_path,
-                )
-                embedding = _load_embedding_from_file(entry_path)
-            elif lower_name.endswith((".jpg", ".jpeg", ".png")):
-                embedding_path = _embedding_path_for_image(entry_path)
-                logger.info(
-                    "Face recognition inspecting home-level image home_id=%s file=%s embedding_path=%s",
-                    home_id,
-                    entry_path,
-                    embedding_path,
-                )
-                if os.path.exists(embedding_path):
-                    logger.info("Face recognition found cached embedding for home-level image file=%s", entry_path)
-                    embedding = _load_embedding_from_file(embedding_path)
+            try:
+                embedding = None
+                if lower_name.endswith(".npy"):
+                    logger.info(
+                        "Face recognition loading embedding home_id=%s person_id=%s file=%s",
+                        home_id,
+                        person_id,
+                        entry_path,
+                    )
+                    embedding = _load_embedding_from_file(entry_path)
+                elif lower_name.endswith((".jpg", ".jpeg", ".png")):
+                    embedding_path = _embedding_path_for_image(entry_path)
+                    logger.info(
+                        "Face recognition inspecting image home_id=%s person_id=%s file=%s embedding_path=%s",
+                        home_id,
+                        person_id,
+                        entry_path,
+                        embedding_path,
+                    )
+                    if os.path.exists(embedding_path):
+                        logger.info("Face recognition found cached embedding for image file=%s", entry_path)
+                        embedding = _load_embedding_from_file(embedding_path)
+                    if embedding is None:
+                        logger.info("Face recognition extracting embedding from image file=%s", entry_path)
+                        image = cv2.imread(entry_path)
+                        if image is None:
+                            logger.info("Face recognition failed to read image file=%s", entry_path)
+                            continue
+                        embedding = _extract_embedding(image)
+                        if embedding is not None:
+                            np.save(embedding_path, embedding)
+                            logger.info("Face recognition cached embedding_path=%s", embedding_path)
+                else:
+                    continue
+
                 if embedding is None:
-                    logger.info("Face recognition extracting embedding from home-level image file=%s", entry_path)
-                    image = cv2.imread(entry_path)
-                    if image is None:
-                        logger.info("Face recognition failed to read home-level image file=%s", entry_path)
-                        continue
-                    embedding = _extract_embedding(image)
-                    if embedding is not None:
-                        np.save(embedding_path, embedding)
-                        logger.info("Face recognition cached home-level embedding_path=%s", embedding_path)
-            else:
-                continue
+                    logger.info("Face recognition skipped empty embedding file=%s", entry_path)
+                    continue
 
-            if embedding is None:
-                logger.info("Face recognition skipped empty embedding file=%s", entry_path)
+                match_ids.append(person_id)
+                embeddings.append(embedding)
+                logger.info(
+                    "Face recognition enrolled entry home_id=%s person_id=%s source=%s total_loaded=%s",
+                    home_id,
+                    person_id,
+                    entry_path,
+                    len(embeddings),
+                )
+            except Exception:
+                logger.exception("Face recognition error while loading file=%s", entry_path)
                 continue
-
-            match_ids.append(home_id)
-            embeddings.append(embedding)
-            logger.info(
-                "Face recognition enrolled home-level entry home_id=%s source=%s total_loaded=%s",
-                home_id,
-                entry_path,
-                len(embeddings),
-            )
-        except Exception:
-            logger.exception("Face recognition error while loading home-level file=%s", entry_path)
-            continue
 
     return match_ids, embeddings
+
+
+def _match_id_for_gallery_file(home_id: str, relative_dir: str, entry_name: str) -> str:
+    if relative_dir != ".":
+        return relative_dir.replace(os.sep, "/")
+
+    marker = "_face_"
+    if marker in entry_name:
+        return entry_name.split(marker, 1)[0]
+    return home_id
 
 
 def _cosine_similarity(a: Any, b: Any) -> float:

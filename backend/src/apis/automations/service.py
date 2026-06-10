@@ -7,10 +7,11 @@ from src.entities.models import (
     AutomationCondition,
     Device,
     HomeUser,
+    Room,
 )
 from sqlalchemy.orm import Session
 
-from src.exceptions import AutomationNotFoundError, ForbiddenError
+from src.exceptions import AutomationNotFoundError, DeviceNotFoundError, ForbiddenError
 from . import models
 
 def _check_home_access(db: Session, home_id: UUID, user_id: UUID):
@@ -19,6 +20,16 @@ def _check_home_access(db: Session, home_id: UUID, user_id: UUID):
     ).first()
     if not member:
         raise ForbiddenError("Bạn không có quyền truy cập")
+
+def _check_action_device_access(db: Session, home_id: UUID, device_id: UUID) -> None:
+    device = db.query(Device).filter(Device.id == device_id).first()
+    if not device:
+        raise DeviceNotFoundError(device_id)
+
+    room = db.query(Room).filter(Room.id == device.room_id).first()
+    if not room or room.home_id != home_id or not getattr(room, "is_active", True):
+        raise ForbiddenError("Thiet bi khong thuoc nha dang tao tu dong hoa")
+
 
 def create_automation(db: Session, user_id: UUID, data: models.AutomationCreate) -> Automation:
     home_id = UUID(data.home_id)
@@ -36,9 +47,13 @@ def create_automation(db: Session, user_id: UUID, data: models.AutomationCreate)
         db.add(cond)
 
     for a in data.actions:
+        action_device_id = UUID(a.device_id) if a.device_id else None
+        if action_device_id:
+            _check_action_device_access(db, home_id, action_device_id)
+
         act = AutomationAction(
             id=uuid4(), automation_id=automation.id,
-            device_id=UUID(a.device_id) if a.device_id else None,
+            device_id=action_device_id,
             action=a.action, value=a.value
         )
         db.add(act)
