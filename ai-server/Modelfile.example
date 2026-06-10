@@ -1,0 +1,21 @@
+# Chỉ định base model (ví dụ model sau khi đã merge LoRA weights và convert sang định dạng GGUF)
+FROM ./smarthome-qwen-3b-q4_k_m.gguf
+
+# Cấu hình tham số sinh văn bản (Temperature thấp để sinh JSON chính xác, tránh sáng tạo bậy)
+PARAMETER temperature 0.1
+PARAMETER top_p 0.9
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "<|im_start|>"
+
+# Định nghĩa Template Prompt của Hệ thống
+TEMPLATE """<|im_start|>system
+{{ .System }}<|im_end|>
+<|im_start|>user
+{{ .Prompt }}<|im_end|>
+<|im_start|>assistant
+"""
+
+# Định nghĩa System Prompt mặc định cho mô hình đã fine-tune
+SYSTEM """Bạn là AI Smart Home Guardian Assistant.
+Chỉ trả lời dựa trên TOOL_RESULTS và MEMORY_CONTEXT.
+Đầu ra phải là JSON hợp lệ theo schema yêu cầu."""

@@ -62,7 +62,9 @@ def _normalize_text(value) -> str:
 
 def _answer_longest_activity_question(message: str, evidence: list[dict], time_range: str | None) -> str | None:
     normalized = _normalize_text(message)
-    if "lau nhat" not in normalized or "hoat dong" not in normalized:
+    has_activity_verb = "hoat dong" in normalized or "chay" in normalized
+    has_superlative = "lau nhat" in normalized or "nhieu nhat" in normalized
+    if not (has_activity_verb and has_superlative):
         return None
 
     totals: dict[str, dict] = {}
@@ -95,7 +97,9 @@ def _answer_longest_activity_question(message: str, evidence: list[dict], time_r
         "this_week": "tuần này",
         "last_week": "tuần trước",
     }.get(time_range, "trong khoảng dữ liệu đã kiểm tra")
-    return f"{device_name}{room_part} hoạt động lâu nhất {range_part}, tổng khoảng {_format_duration(winner['seconds'])}."
+    
+    superlative_word = "nhiều nhất" if "nhieu nhat" in normalized else "lâu nhất"
+    return f"{device_name}{room_part} hoạt động {superlative_word} {range_part}, tổng khoảng {_format_duration(winner['seconds'])}."
 
 
 def _collect_command_candidates(tool_results: list[dict]) -> list[dict]:

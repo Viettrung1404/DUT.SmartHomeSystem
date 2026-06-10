@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from app.agent.intent_router import _normalize
+from app.agent.intent_router import _normalize, QUESTION_OR_ANALYTIC_PHRASES
 
 
 @dataclass(frozen=True)
@@ -12,25 +12,6 @@ class DeviceCommand:
     room_hint: str | None = None
     exclude_room_hint: str | None = None
     target_count: int | None = None
-
-
-QUESTION_OR_ANALYTIC_PHRASES = [
-    "tai sao",
-    "vi sao",
-    "goi y",
-    "de xuat",
-    "quen tat",
-    "bat thuong",
-    "canh bao",
-    "hoat dong",
-    "lau nhat",
-    "thiet bi nao",
-    "bao lau",
-    "may lan",
-    "lich su",
-    "chay nhieu",
-    "su dung",
-]
 
 
 DEVICE_CANDIDATES = [

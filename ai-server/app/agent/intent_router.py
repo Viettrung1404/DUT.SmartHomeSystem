@@ -50,24 +50,53 @@ def classify_intent(message: str) -> IntentResult:
     )
 
 
+QUESTION_OR_ANALYTIC_PHRASES = [
+    "tai sao",
+    "vi sao",
+    "goi y",
+    "de xuat",
+    "quen tat",
+    "bat thuong",
+    "canh bao",
+    "hoat dong",
+    "lau nhat",
+    "thiet bi nao",
+    "bao lau",
+    "may lan",
+    "lich su",
+    "chay nhieu",
+    "su dung",
+    "dang bat",
+    "dang tat",
+    "dang hoat dong",
+    "dang mo",
+    "dang dong",
+    "dang khoa",
+    "bat hay tat",
+    "tat hay bat",
+    "mo hay dong",
+    "dong hay mo",
+    "mo hay khoa",
+    "khoa hay mo",
+    "bat hay khong",
+    "tat hay khong",
+    "mo hay khong",
+    "dong hay khong",
+    "khoa hay khong",
+    "co dang",
+    "co bat",
+    "co tat",
+    "co hoat dong",
+    "co mo",
+    "co dong",
+    "co khoa",
+    "co online",
+    "co offline",
+]
+
+
 def _looks_like_direct_command(normalized: str) -> bool:
-    if any(
-        phrase in normalized
-        for phrase in [
-            "tai sao",
-            "vi sao",
-            "goi y",
-            "quen tat",
-            "bat thuong",
-            "canh bao",
-            "hoat dong",
-            "lau nhat",
-            "thiet bi nao",
-            "bao lau",
-            "may lan",
-            "lich su",
-        ]
-    ):
+    if any(phrase in normalized for phrase in QUESTION_OR_ANALYTIC_PHRASES):
         return False
     words = set(re.sub(r"[^\w\s]", " ", normalized).split())
     if {"tat", "bat", "off", "on", "khoa", "lock", "unlock", "mo", "open", "close"} & words:
